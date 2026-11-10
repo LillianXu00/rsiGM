@@ -1,0 +1,25 @@
+{
+  "provider": "bigmodel-coding-plan",
+  "model": "glm-5.3-flash",
+  "mode": "live",
+  "tests_passed": 16,
+  "smoke": [
+    {
+      "runtime": "pi",
+      "status": 200,
+      "requests": 1,
+      "input_tokens": 58,
+      "output_tokens": 18
+    },
+    {
+      "runtime": "claude",
+      "status": 200,
+      "requests": 1,
+      "input_tokens": 160,
+      "output_tokens": 18
+    }
+  ],
+  "secret_persisted_in_artifacts": false,
+  "evolution_controller_mode": "mock",
+  "cost_usd": null
+}

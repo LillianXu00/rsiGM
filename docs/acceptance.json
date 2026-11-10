@@ -1,0 +1,53 @@
+{
+  "date": "2026-11-10",
+  "tests": {
+    "command": "python3 -m unittest discover -s tests -v",
+    "passed": 29,
+    "failed": 0,
+    "seconds": 31.296
+  },
+  "final_isolation": {
+    "child_uid": 65534,
+    "capabilities": 0,
+    "doctor": "passed",
+    "hidden_file_read_and_stat": "denied",
+    "note": "formal run requires privileged controller to drop child identity"
+  },
+  "final_live_smoke": {
+    "model": "glm-5.3-flash",
+    "pi": {
+      "requests": 1,
+      "http": 200,
+      "peak_rss_kb": 144436
+    },
+    "claude": {
+      "requests": 1,
+      "http": 200,
+      "peak_rss_kb": 199696
+    }
+  },
+  "real_loop": {
+    "root": "runs/live-acceptance-v3",
+    "controller_commit": "3e27eacea03dbc6331d2de1d378086d3d6d93ca1",
+    "baseline": 11,
+    "regression_total": 12,
+    "candidate_regression": 6,
+    "evaluations": 2,
+    "passed_capability_evaluations": 0,
+    "epoch": 0,
+    "seed_candidate": "rejected due to coding regression",
+    "challenger_candidate": "rejected: oracle failed reference or negative control",
+    "usage": {
+      "reported_input_tokens": 23823,
+      "reported_output_tokens": 17452,
+      "requests": 34,
+      "reserved_tokens": 190456
+    }
+  },
+  "limitations": [
+    "Real run completed before final UID isolation hardening; final code verified with full local tests and both real runtime smoke calls.",
+    "Epoch replacement and selective erasure exercised with offline injected provider, not observed in the short real run.",
+    "No claim of emergent distributed intelligence or unified individuality.",
+    "Legacy failed/interrupted runs retained. Use a fresh root with final source."
+  ]
+}

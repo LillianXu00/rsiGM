@@ -1,0 +1,31 @@
+{
+  "tests_passed": 12,
+  "reference_calibration": "12/12; not Seed score",
+  "mode": "mock; no real API or capability claim",
+  "runs": {
+    "mock": {
+      "evaluations": 8,
+      "epoch": 1,
+      "trees": {
+        "challenger": 3,
+        "seed": 3
+      },
+      "raw_records": 8,
+      "active_records": 4,
+      "observed_pi_peak_rss_kb": 141076,
+      "report": "runs/mock/report.html"
+    },
+    "verified": {
+      "evaluations": 4,
+      "epoch": 1,
+      "trees": {
+        "challenger": 2,
+        "seed": 2
+      },
+      "raw_records": 4,
+      "active_records": 0,
+      "observed_pi_peak_rss_kb": 142420,
+      "report": "runs/verified/report.html"
+    }
+  }
+}

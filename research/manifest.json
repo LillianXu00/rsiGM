@@ -1,0 +1,22 @@
+{
+  "HGM": {
+    "commit": "013872d95da978483f5b540e531db063d23890da"
+  },
+  "Hyperagents": {
+    "commit": "59a68f672dfb92c74aeb7e61535d776fb36e172d"
+  },
+  "red-queen-godel-machine": {
+    "commit": "2cea930b09e1df0e564efb0d6e77ac5154e52be7"
+  },
+  "pi": {
+    "commit": "4ea8837927564c592b1d184c956ab7d28c88119b"
+  },
+  "evalplus": {
+    "commit": "26d6d00bb1fd0fa37f39c99d5290da67891d1c5e"
+  },
+  "papers": {
+    "HGM.pdf": "06cbf326c605e59777d3f8550e01d41e6b49f78bf0d850f2d173c9f06f6cc254",
+    "HyperAgents.pdf": "ad3e7ec49f316e0feb00e9994785b618308e47ea5c3ed53b90cd4642d3af2619",
+    "RQGM.pdf": "55b0c6339fb957435b321dff648d10ca1f49a54d3cda2c140ba46a6feddfbb9d"
+  }
+}

@@ -1,0 +1,2588 @@
+                                                                                         The Red Queen Gödel Machine:
+                                                                                         Co-Evolving Agents and Their Evaluators
+                                                                   Alex Iacob1* , Andrej Jovanović1,3* , William F. Shen1* , Daniel Burkhardt2 , Meghdad Kurmanji1 ,
+                                                                   Nurbek Tastan4 , Lorenzo Sani1,3 , Niccolò Alberto Elia Venanzi2 , Jiayi Nie1 , Ambroise Odonnat5 ,
+                                                                   Zeyu Cao1 , Bill Marino1 , Xinchi Qiu1 , Rika Antonova1 , Nicholas D. Lane1,3
+                                                                   1 University of Cambridge                    2 NVIDIA               3 Flower Labs                                    4 MBZUAI            5 Inria                                                   * Equal contribution.
+
+                                                                   Abstract. Self-improving agents are state-of-the-art on agentic coding benchmarks, yet their
+                                                                   search methods assume a stationary evaluation criterion. This ignores a central feature of evo-
+                                                                   lution: species adapt as their environments change with them. We introduce the Red Queen
+                                                                   Gödel Machine (RQGM), an evolutionary framework for recursive self-improvement under
+arXiv:2606.26294v3 [cs.LG] 8 Oct 2026
+
+
+
+
+                                                                   non-stationary utilities. This allows learned evaluators to improve alongside the agents they
+                                                                   guide. On DeepSWE, the RQGM improves over its fixed-evaluator baseline by adding a com-
+                                                                   plementary agent-as-a-judge code-review signal: a co-evolved reviewer grades coder patches
+                                                                   to guide search. At low reasoning effort, the RQGM coder passes 82.1% of held-out tasks against
+                                                                   the baseline’s 75.0%, and nearly matches the GPT-6 Astra model at high effort. In scientific
+                                                                   paper writing and reviewing, and Olympiad-level proof writing and grading, co-evolved eval-
+                                                                   uators provide an evaluation criterion. Anchored to human IMO grades, a co-evolved grader
+                                                                   writes its own milestone rubric and exceeds static baselines at a 3× lower search cost, driv-
+                                                                   ing the prover to the best mean score. Since the RQGM can modify the search objective across
+                                                                   epochs, it can regularize the search. For example, the RQGM reduces self-preference bias via an
+                                                                   additional adversarial objective to discover reviewers equally stringent on AI and human work.
+                                                                   Guided by these calibrated reviewers, co-evolved writers reach 1.78×–1.86× higher acceptance
+                                                                   rates than the baseline under an agent-as-a-judge panel. The RQGM enables self-improving sys-
+                                                                   tems where agents and evaluators recursively bootstrap each other beyond static evaluation.
+                                                                   Keywords: self-improving agents, learned evaluation, multi-agent systems, au-
+                                                                                                                                                                                                                                      Learni
+                                                                                                                                                                                                                               in e             ng
+                                                                                                                                                                                                                          ch
+                                                                                                                                                                                                                     Ma                              S
+                                                                                                                                                                                                                                                      ys
+                                                                                                                                                                                                                ge
+
+
+
+
+                                                                                                                                                                                                                                                          te
+                                                                                                                                                                                                            id
+
+
+
+
+                                                                                                                                                                                                                                                           ms
+                                                                                                                                                                                                         C am b r
+
+
+
+
+                                                                                                                                                                                                                                                               La b
+
+
+
+
+                                                                   tomated scientific discovery, controlled utility evolution, co-evolutionary search                                                                ls
+                                                                                                                                                                                                                    m
+
+
+
+
+                                                                                                                                                                                                                                                     k
+
+
+
+
+                                                                                                                                                                                                                          ys                         .u
+                                                                                                                                                                                                                               .cs t            ac
+                                                                                                                                                                                                                                       .c am.
+
+
+
+
+                                                                                   Astra baseline (held-out)   Astra baseline (full DeepSWE)                                                            coder (code-review utility)                                              reviewer (ground truth)
+                                                                   90%                                                                                                                  80%
+                                                                            RQGM coder
+                                                                            HGM-H coder                                                                                                 70%
+                                                                                                                                                     Best-belief utility (ε = 0.05) ↑
+
+
+
+
+                                                                   85%
+                                        Held-out pass rate (%) ↑
+
+
+
+
+                                                                                                                                                                                        60%
+                                                                   80%
+                                                                                                                                                                                        50%
+                                                                   75%                                                                                                                  40%                                                                                            RQGM coder
+                                                                                                                                                                                                                                                                                       HGM-H coder
+                                                                                                                                                                                        30%                                                                                            evaluator replacement
+                                                                   70%
+                                                                                                                                                                                        20%
+                                                                   65%
+                                                                                                                                                                                        10%
+                                                                   60%                                                                                                                  0%
+                                                                             low                           medium                        high                                                 0   100                                                     200            300     400           500             600
+
+                                                                                                    Reasoning effort                                                                                     Search tokens (millions, blended) ↓
+
+                                             Figure 1: RQGM outperforms the HGM-H baseline on DeepSWE: it matches HGM-H at equal
+                                             search cost and keeps improving after HGM-H plateaus, with harness improvements that trans-
+                                             fer to higher reasoning efforts. Left: held-out pass rate of the best coder harness across reasoning
+                                             efforts; both the RQGM and HGM-H searched using low reasoning effort for the coder. Gray ×’s
+                                             show base GPT-6 Astra held-out performance; diamonds show its performance on full DeepSWE.
+                                             Right: the leading agent’s best-belief task utility during search, defined as the 5th percentile of its
+                                             Beta working posterior. Orange shows the leading coder’s utility under the co-evolved code-review
+                                             objective; teal tracks the leading reviewer’s utility against ground truth. The RQGM co-evolves a
+                                             learned code reviewer, providing a complementary search signal that improves across evolution-
+                                             ary epochs. Crowns mark epoch boundaries, where a stronger reviewer replaces the incumbent and
+                                             reviewer-dependent utility records are erased, so coder-review utility may shift even when the lead-
+                                             ing coder is unchanged; these boundaries coincide with improvements in the teal curve.
+
+
+                                                                                                                                                 1
+1     I NTRODUCTION
+
+Self-improving agents aim to turn gains in coding and reasoning into a recursive loop, where each
+stronger agent can produce better variants of itself. Search methods such as the Darwin and Hux-
+ley Gödel Machines (DGM and HGM) [1, 2] set the open-source state-of-the-art on agentic cod-
+ing tasks by editing their own code and retaining variants that improve an external utility signal.
+HyperAgents [3] then extended this self-improvement beyond coding to task agents in arbitrary
+domains. Despite this progress, current search methods still depend on stationary evaluation fixed
+outside the improvement loop. This is unlike biological evolution, where, under Van Valen’s Red
+Queen hypothesis [4], each species adapts to competitors that evolve in turn. This dependence con-
+strains self-improvement when a target task has no direct benchmark, as for paper and proof writing,
+unlike paper reviewing and proof grading [5–7], when evaluation is slow or weakly informative [8–
+10], and when static benchmarks saturate or become vulnerable to reward hacking [11, 12].
+We introduce the Red Queen Gödel Machine (RQGM), an evolutionary framework that treats eval-
+uation as part of the search process. We study this through co-evolved learned evaluators, which
+improve alongside the task agents they guide. Such an evaluator can supply the search signal when
+no benchmark exists, add criteria a benchmark cannot capture, or act as a cheaper proxy. The core
+mechanism is controlled utility evolution, which divides search into evolutionary epochs. Within an
+epoch, one evaluator is frozen and grades every task agent, supplying a stationary utility signal. In
+parallel, the search co-evolves challenger evaluators with their task agents and scores them against
+a held-out ground-truth dataset. At an epoch boundary, a challenger replaces the frozen evaluator
+only if it raises the incumbent’s best-belief score on a replacement criterion; the RQGM then ap-
+plies selective erasure, discarding only utility records that depended on the replaced evaluator. Each
+epoch is thus a fixed-criterion search problem, so HGM’s guarantees apply within each epoch (Sec. 3
+and App. F). Since validity requires only a fixed within-epoch utility and boundary erasure of de-
+pendent records, time-varying benchmarks and adversarial objectives fit the same structure.
+On DeepSWE [13], the RQGM coder running at low reasoning reaches a held-out pass rate of 82.1%
+against the HGM-H baseline at 75.0%. The RQGM with low reasoning also matches the base GPT-6
+Astra model in the mini-SWE-agent harness at high effort, and reaches 85.7% at medium or
+high effort (Fig. 1). On Polyglot, the RQGM reaches 71.7% against 69.9% with fewer search
+tokens (Fig. 3). This illustrates a broader advantage of the RQGM: shared expansions can improve
+multiple utilities at once, since most accepted expansions edit code shared by the coder and re-
+viewer (Fig. 11). We then turn to scientific paper writing and reviewing, and Olympiad-level proof
+writing and grading, where only reviewing and grading have a benchmark. Co-evolved writers raise
+reviewer-panel acceptance from 21.8% to 40.5% (Tab. 2), while a co-evolved grader exceeds the
+static baselines with a 3× lower search cost than HGM-H (Fig. 6). Co-evolution can also regularize
+evaluators: replaying AI-generated papers accepted by a displaced reviewer as adversarial samples
+produces a reviewer equally stringent on machine-written and human-written work (Fig. 7). Given
+the pace of model improvement, we believe automatically evolving the benchmarking process is
+needed for AI systems to exceed what static evaluation alone can achieve.
+
+
+    Contributions:
+    1. Recursive Self-Improvement under Non-Stationary Utilities. The RQGM extends self-improving
+       agents beyond fixed evaluation by allowing the utility to change over the course of search (Sec. 3).
+       This supports both learned evaluators that act as agents-as-judges for downstream tasks and more gen-
+       eral time-varying utilities, such as curricula over task and dataset partitions during search.
+    2. Controlled Utility Evolution. Building on the above, this framework extends self-improvement to
+       learned evaluators while anchoring progress to a ground-truth benchmark. However, benchmark-based
+       supervision alone may impose a ceiling on evaluator quality. To move beyond this limit, we introduce
+       additional selective pressure through adversarial objectives that regularize the search process, encour-
+       aging evaluators to continue improving beyond the level directly supported by the ground-truth signal.
+    3. Practical Benefits of Co-Evolved Learned Evaluators and Search Interventions. Co-evolved
+       learned evaluators improve both performance and search efficiency, yielding stronger coders than fixed-
+       evaluator search, enabling search where direct benchmark feedback is unavailable, and supporting ad-
+       versarial refinement of evaluators to correct failure modes such as over-leniency.
+
+
+
+
+                                                        2
+2       R ELATED W ORK
+Self-Improving AI. The Gödel Machine [14] is a theoretical construct that rewrites its own
+code whenever it can prove that doing so is beneficial. A recent line of work makes this construct
+empirical by replacing proof search with archive search over observed utility. The Darwin Gödel
+Machine [DGM, 1] ranks self-modifying coding agents by benchmark utility, the Huxley-Gödel
+Machine [HGM, 2] scores nodes by clade metaproductivity rather than their own score, and
+HyperAgents [3] extends self-modification beyond coding tasks by making each node an editable
+meta-agent/task-agent codebase. These systems hold their evaluation criterion fixed outside the
+loop, exposing them to benchmark saturation [12], judge biases [15, 16], and reward hacking [17].
+The RQGM departs from this line of work by pulling the evaluation criterion itself inside the loop,
+searching over the evaluators that define the utility.
+
+Co-Evolving Evaluation. Recent work co-adapts generators and rewards within the gradient-
+based training of a single model [18–20] or co-evolves evaluation metrics with agent skills un-
+der ground-truth guards [21]. By contrast, the RQGM operates in the search space of agentic code-
+bases, preserving HGM’s epoch-local validity while gating every evaluator promotion on an evaluator-
+independent ground-truth anchor. In doing so, it guards against the self-referential drift documented
+in self-rewarding training [22, 23]. A further survey of related work can be found in App. H.
+
+3       RQGM: C O -E VOLVING AGENTS AND T HEIR E VALUATORS
+As visualized in Fig. 2, the RQGM is a search over an archive T where each node is a shared, evolv-
+able workspace containing task agents, evaluators, and a meta-agent that oversees the workspace.
+Expansion creates an edited child starting from the parent. Since the meta-agent and role-agent code
+are editable, roles may reuse each other’s code if the meta-agent deems it useful. Only the scor-
+ing and orchestration harness are fixed. Departing from prior work, the RQGM introduces controlled
+utility evolution to co-evolve agents and their evaluators (Sec. 3.2). Details are in App. B.
+
+    archive
+                                                  role                  tasks     scored by                                checkpoint selection
+                          best belief                                                                                       -best belief on GT anchor
+                                                            generator                slot
+                                                                                                         frozen epoch                                                     re-frozen
+                                                            generator                slot
+
+                                                            evaluator               ground truth
+                                                                                          fills
+                                                            evaluator               ground truth
+                                                                                          fills
+
+
+                                                         node      roles shared workspace
+              Thompson sampling                                                                        selective erasure
+                  on
+
+
+
+                                  role-uniform & task-balanced within a role                                                                            checkpoints are exponentially-spaced
+
+
+
+
+Figure 2: RQGM co-evolves task agents and evaluators in a shared workspace tree. Evaluators
+are scored on ground-truth. At checkpoints, the highest best-belief evaluator is selected, and records
+dependent on displaced evaluators are erased (Algorithm 1), we show an expanded view in Fig. 8.
+
+
+3.1           S EARCH S PACE AND U TILITY
+
+The RQGM enables the evaluation of tasks without ground-truth signal via distinct evaluator roles. In
+addition to evaluator-independent roles that use fixed benchmarks (App. B.1), evaluator-dependent
+roles use learned evaluators, each held in an independently replaced evaluator slot.
+Self-improvement as tree search. Following Wang et al. [2], the archive T at time 𝑡 (T𝑡 ) grows
+from a root agent 𝑎 0 . Each step either expands a node, adding an edited child, or evaluates a node
+on one task, adding a binary outcome to its successes 𝑆 𝑎 or failures 𝐹𝑎 . Expansion occurs via a
+UCB-Air gate [24] when the number of evaluations is sufficient (see App. B.2). A node’s own
+success rate poorly predicts what its descendants achieve, so Thompson sampling selects expansion
+parents by clade metaproductivity, the rate pooled over the subtree 𝐶 (𝑎) rooted at 𝑎, CMP(𝑎)d      =
+𝑆𝐶  /(𝑆 𝐶 + 𝐹 𝐶 ), and evaluation targets by their own (𝑆 , 𝐹 ). Under a fixed criterion, a CMP oracle
+  𝑎     𝑎     𝑎                                          𝑎   𝑎
+suffices to implement the Gödel Machine (Thm. 1).
+
+
+                                                                                                   3
+Utility definition. The role-aggregated search utility averages success rates over each role’s tasks,
+then over roles. Let 𝑝 𝑟 ,𝑑 (𝑎) be node 𝑎’s expected success rate on task 𝑑 of role 𝑟 under the fixed
+evaluation criteria. With 𝐾 roles and task pools D𝑟 , we weight roles uniformly:
+                                             𝐾
+                                                "                    #
+                                          1 ∑︁ 1 ∑︁
+                                 𝑈 (𝑎) =                   𝑝 𝑟 ,𝑑 (𝑎) .
+                                         𝐾 𝑟=1 |D𝑟 | 𝑑 ∈ D
+                                                                 𝑟
+
+At each evaluation, the scheduler selects a node, then its least-evaluated eligible role and task
+(App. B.2). For any fixed utility, the node’s 𝜖-best-belief is a lower quantile of a Beta working
+posterior, and the search returns its maximizer once the budget 𝐵 is spent.
+                            𝐵𝐵 𝜖 (𝑎) = Quantile 𝜖 [Beta(1 + 𝑆 𝑎 , 1 + 𝐹𝑎 )] .
+If all roles and tasks remain eligible and each pair’s empirical success rate converges to its fixed
+mean, the pooled rate converges to 𝑈 (𝑎) under balanced sampling (Prop. 1).
+
+3.2     C ONTROLLED U TILITY E VOLUTION
+
+In fixed-criterion search, learned evaluators cannot co-evolve with the agents they score. To en-
+able the co-evolution of evaluators and their agents, we first assume epoch-local stationarity: each
+evaluator, node workspace, and scoring rule stays fixed within an epoch, the interval between two
+checkpoints (Asm. 2). At specific checkpoints (epoch boundaries), learned evaluators may be re-
+placed if they fulfill the following criterion (App. B.3).
+Ground-truth evaluator replacement. At each checkpoint, every evaluator slot compares its in-
+cumbent against challengers on a ground-truth anchor, a fixed held-out dataset of objective or human
+labels. The highest anchor best-belief wins, with ties retaining the incumbent. A slot may also re-
+ward rejecting an adversarial pool of outputs its displaced evaluator had accepted (Sec. 4); without
+one, the evaluator-independent anchor keeps one criterion across epochs (App. F.2.1).
+
+    Anchor Selection. Let 𝑄(𝑒) be evaluator 𝑒’s exact score on the fixed anchor, and E a finite candidate
+    set containing the incumbent 𝑒 old . Exact comparison on the full validation set raises 𝑄 at every replace-
+    ment (Prop. 7). If each candidate’s estimate is within 𝜂 of 𝑄(𝑒) and 𝑒 new has the largest estimate, then
+                                   𝑄(𝑒 new ) ≥ max 𝑄(𝑒) − 2𝜂 ≥ 𝑄(𝑒 old ) − 2𝜂.
+                                               𝑒∈ E
+
+    Each of the two score approximations contributes at most 𝜂 to the comparison error (Prop. 8).
+
+For fixed 𝜖 ∈ (0, 1), the Beta mean and quantile converge to 𝑄(𝑒) when their samples consistently
+estimate that same objective. Each utility record 𝑧 carries the set dep(𝑧) of slots whose evaluator
+affected its generation, sampling, replay, or scoring. Upon replacement on slot 𝑚, selective erasure
+removes every record 𝑧 with 𝑚 ∈ dep(𝑧) written under the displaced evaluator, since keeping or
+rescaling it would mix evidence from two utilities. Other records and all artifacts are unaffected, and
+node and clade statistics are recomputed (Def. F.2 and Prop. 2).
+
+    Epoch-Local Validity. Stationary generation and scoring give each node–role–task tuple a fixed success
+    probability. With selective erasure, each epoch is a fixed binary-outcome search problem (Props. 3 and 5),
+    to which HGM’s analysis applies within the epoch under its remaining assumptions (Asm. 1).
+
+Amortized utility-transition cost. Re-scoring the entire archive after every erasure wastes budget
+on nodes the search may never revisit. To avoid this, the RQGM re-scores old nodes on demand,
+using cached outputs without additional task-agent calls beyond the new evaluator. In addition, we
+use exponentially spaced checkpoints to bound total cost (App. B.3).
+
+    Bounded Recovery. Fix one evaluator slot and a budget of 𝐵 evaluations. If each checkpoint reprocesses
+    at most all prior slot-dependent records, the total is bounded by 𝜌𝐵/(𝜌 − 1) for checkpoint ratio 𝜌 > 1.
+    Reassessing all prior records after every evaluation would require O (𝐵2 ) work (Prop. 6 and Rem. 2).
+
+
+4     E XPERIMENTAL D ESIGN
+Domains and ground-truth anchors. Paper writing and review are paired, anchored to APReS
+accept/reject decisions [25]. Proof writing and grading are anchored to IMO-GradingBench hu-
+
+
+                                                        4
+man grades [7], where a proof is accepted only when the epoch’s frozen grader awards full credit (7
+of 7). Coding uses two benchmarks, each with two anchors. On Polyglot [26], the coding agent
+is anchored to executable tests, with the code reviewer anchored to CRAVE [27], a dataset of accept-
+ed/rejected pull requests. On DeepSWE [13], the coder is anchored to the benchmark’s tests, and
+the code reviewer to a balanced dataset of publicly available accepted/rejected patches (App. C.6).
+Reward design follows HyperAgents [3]: a task agent writes a reward function, and a quadruped
+policy trained on it with PPO is scored on forward walking during search and on jumping held out. Its
+utility is continuous, so we slightly adapt the HGM utility and search prior (App. B.5). Appendix C.8
+details the splits, curriculum, and protocol.
+Data splits. Every dataset is divided into train, validation, and held-out test splits. The meta-agent
+may request task-agent results only on the train split, which informs its edits. Node selection and
+evaluator replacement are driven solely by the validation split. The held-out test split is never seen
+during search and is used only for post-hoc scoring of search-selected agents. Appendix C.6 de-
+scribes how each dataset is split. We show the initialization of each role in App. C.9.
+Baselines. Every headline domain uses a learned baseline, HGM-H [2, 3], which replaces the DGM
+search algorithm of HyperAgents [3] with the more sample-efficient HGM, while keeping evalu-
+ators frozen. We use the Sakana prompt reviewer [5] for paper writing, ProofAutoGrader [7]
+for proof grading, and the IMO25 prover [28] for proof writing. We evaluate the best published
+HyperAgents (DGM-H) patches from Zhang et al. [3] for paper reviewing and grading as a proxy
+for DGM-level performance. We selected GPT-5.5 (low) for experiments unless otherwise stated.
+For DeepSWE, we move to GPT-6 Astra [29], the strongest model on the DeepSWE leaderboard
+at the time of writing, with a high-effort meta-agent and low-effort task agents in both arms. For the
+reward design domain we use Nemotron 3 Ultra.
+Search interventions. In paper writing/reviewing and on DeepSWE, we use controlled utility evo-
+lution to challenge evaluators with outputs accepted by previous evaluators. After replacement, the
+papers or patches the displaced evaluator had accepted form an adversarial pool. Subsequent eval-
+uator selection rewards rejecting these generated outputs alongside performance on the labeled ex-
+amples. We ablate these mechanisms in App. D.2. For reward design we use a curriculum over the
+difficult of the task as a form of evolving utility.
+Costs and reporting. Best-belief is comparable across epochs only when it rests on a fixed ground-
+truth anchor, so a global best-belief winner exists only for anchored roles: the learned evaluators and
+the verifiable coding agent. The paper writer and prover have no anchor and admit only epoch-local
+winners, each the best agent under its epoch’s frozen evaluator; we select these per epoch and score
+them post-hoc against fixed external judges (Tabs. 2 and 3). We compare headline runs at matched
+search tokens rather than evaluation counts, since evaluations differ in cost; we report blended to-
+kens: input plus output, with output weighted at 5× input cost [30, 31], counting both generation
+and evaluation calls. Following Wang et al. [2], a best-belief agent’s cost is measured when it first
+attains its highest 𝜖-best-belief score, not when the epoch or run finishes. Specialist nodes are those
+that maximize best-belief on one target utility; a generalist is a node that maximizes the average
+best-belief across its active utilities (App. C.3). When the specialist and generalist coincide on the
+same node, we report a single result.
+
+5     R ESULTS
+Our results show that where ground truth exists, a co-evolved evaluator provides a complemen-
+tary objective and finds stronger agents than fixed-evaluator search (Sec. 5.1). Where no bench-
+mark exists, it supplies the search signal, and co-evolved agents outperform fixed-evaluator base-
+lines (Sec. 5.2). Evaluator replacements act as a curriculum, re-ranking the archive toward new
+candidates around a resilient backbone (Sec. 5.3). Finally, co-evolution improves the evaluators
+themselves, and adversarial objectives correct failure modes such as self-preference (Sec. 5.4).
+
+5.1   L EARNED EVALUATION HELPS EVEN WHERE GROUND TRUTH EXISTS (RQ1)
+
+In both coding domains, we co-evolve a code reviewer with the coder, providing a cheaper, com-
+plementary surrogate to the ground-truth signal. We also study reward design, where ground truth
+exists but non-stationary utilities can still improve search.
+
+
+                                                  5
+                                tokens saved to exceed the pass rate of the baseline                                                                      code-review utility         code-review on
+                                                                                                                                           80%
+                  74%
+
+pass rate (%) ↑
+                                                                        RQGM coder (generalist)
+                                                                        RQGM coder (specialist)                                            75%
+
+
+
+
+                                                                                                        Best-belief utility (ε = 0.05) ↑
+                  72%                                                   HGM-H coder
+                                                                                                                                           70%
+                  70%                                                                                                                      65%
+                                                                                                                                           60%
+                  68%
+                                                                                                                                           55%
+                  66%                         1.72 × fewer tokens                                                                          50%
+                                                                                                                                                                                             RQGM coder (generalist)
+                  64%                                                                                                                      45%
+ Held-out
+
+
+
+
+                                                                                                                                                                                             RQGM coder (specialist)
+                                                             1.35 × fewer tokens
+                                                                                                                                                                                             HGM-H coder
+                                                                                                                                           40%                                               evaluator replacement
+                  62%
+                                                                                                                                           35%
+                         70    80           90             100             110         120                                                       0   20        40               60      80             100      120
+
+                               Search tokens (millions, blended) ↓                                                                                        Search tokens (millions, blended) ↓
+
+   Figure 3: RQGM exceeds the HGM-H baseline on Polyglot with 1.35×–1.72× fewer search to-
+   kens by adding a cheap evolved code reviewer. Left: held-out pass rate against search cost; the
+   heart marks the best agent. Right: best-belief utility across epochs. Crowns mark evaluator replace-
+   ments, when erasure discards the displaced reviewer’s utility records.
+
+   Table 1: A walking curriculum yields reward designers that transfer to jumping. Five searches
+   per arm at 125 evaluations, six held-out trials each; mean ± std over 30 trials.
+
+            Search                        Held-out score ↑ Median                                 Runs with jumps                                     Nodes/run                 Search tokens (blended)
+            Static evaluator                   0.306 ±0.128                       0.302                                       3/5                         22.0                            48.3M
+            RQGM curriculum                    0.365 ±0.053                       0.361                                       5/5                         21.2                            53.8M
+
+
+
+   DeepSWE. At low reasoning effort, the RQGM coder scores 82.1% compared to 75.0% for the best
+   HGM-H coder (Fig. 1). At matched search tokens the two searches reach similar best-belief, but
+   HGM-H never finds a better coder over the rest of its run, while the RQGM continues to improve. It
+   exceeds GPT-6 Astra at low (68.8%) and medium (76.8%) effort, and nearly matches it at high
+   effort (83.0%). These gains transfer to higher reasoning efforts: at medium and high effort, the RQGM
+   coder passes 85.7%, ahead of the HGM-H coder (78.6%, 82.1%) (App. C.7). As on Polyglot, the
+   co-evolved reviewer grades every coder patch, and this signal steers expansion (App. E.4).
+   Polyglot. The RQGM exceeds the HGM-H held-out pass rate for both the specialist and generalist
+   at 1.35×–1.72× lower token cost (Fig. 3). Examining where the meta-agent edits the codebase shows
+   the benefits of co-evolution: in the DeepSWE run, 83% of accepted code patches modify shared task-
+   agent functionality or infrastructure used by both the coder and the reviewer, rather than role-specific
+   code, and in Polyglot 90% do (Fig. 11). This suggests that co-evolution enriches the search rather
+   than splitting its effort across competing objectives.
+   Reward design. Instead of changing the evaluator at epoch boundaries, the RQGM changes the task
+   dataset. Meta-agents design reward functions for reinforcement learning: search scores them on a
+   quadruped learning to walk forward, while the held-out task is learning to jump [3]. After a first
+   epoch on the original walking task, the RQGM adds a progressively larger obstacle in the robot’s
+   path (App. C.8), and we compare it with the same search under a static evaluator. The held-out
+   mean rises by 19%, and all five RQGM runs yield a jumping policy, against three of five for the static
+   evaluator (Tab. 1). These results match those of HyperAgents [3], at 3.85–4.33× lower cost, using
+   Nemotron 3 Ultra rather than Claude Sonnet 4.5.
+
+                  RQ1: The RQGM enriches search utilities: even with ground truth, a co-evolved evaluator provides a com-
+                  plementary objective. On DeepSWE it finds a stronger coder than fixed-evaluator search or base models,
+                  while on reward design it improves generalization from walking to jumping.
+
+
+   5.2                  L EARNED EVALUATION IMPROVES AGENTS WITHOUT OBJECTIVE EVALUATION (RQ2)
+
+   We now turn to domains with no objective benchmark, where only evaluator-dependent task agents
+   exist. We score the artifacts produced by our paper writer and prover against a broad panel of re-
+
+
+                                                                                                    6
+viewers and graders from both our work and prior baselines. Here we evaluate only the task agents,
+deferring their co-evolved evaluators to Sec. 5.4, where anchor data permits further analysis.
+Paper writing. We score writer artifacts against a panel of four reviewers (Tab. 2). At matched
+search tokens, the RQGM writer achieves a 1.78× higher average reviewer-panel acceptance rate
+than the HGM-H, and the best discovered agent across the full run beats the HGM-H with a 1.86×
+higher average acceptance rate. We ascribe this improvement to the regularized search, which favors
+reviewers that are harsher on AI-generated text (Sec. 5.4).
+
+Table 2: Co-evolved writers achieve 1.78× higher mean acceptance at matched search cost, and
+1.86× for the best-found specialist. The four Reviewers give the percentage of writer-generated
+papers that the specific reviewer accepts (mean ± 95% Jeffreys half-width). RQGM adversarial is
+the RQGM reviewer regularized to be harsher on AI-written text (Sec. 5.4). Best per column in bold.
+
+                                             Reviewer Acceptance Rate (%, ↑)
+ Writer                   Search      Sakana       DGM-H         HGM-H         RQGM        Mean (%, ↑)
+                          Tokens                                             adversarial
+ HGM-H writer              42.5M      1.0 ±2.2     12.0 ±6.3     64.0 ±9.3    10.0 ±5.9    21.8 ±4.0
+ RQGM writer (generalist) 44.6M       2.0 ±2.9     43.0 ±9.6     81.0 ±7.6    29.0 ±8.8    38.8 ±4.8 (1.78× )
+ RQGM writer (specialist) 221.8M      5.0 ±4.3     40.0 ±9.5     86.0 ±6.8    31.0 ±9.0    40.5 ±4.8 (1.86× )
+
+
+
+Table 3: The co-evolved RQGM specialist prover attains the best mean score. A panel of three
+graders scores every proof. We pool each metric across graders, with per-grader results in Tab. 10;
+without the RQGM grader, the specialist still matches IMO25 (4.03 vs. 4.08) and beats HGM-H (3.60).
+Score is the mean grade (0–7), Pass@6 the fraction scoring at least 6 of 7, and Pass@7 the fraction
+earning full credit; all report ± s.e.m. Best per column in bold.
+
+           Prover                     Search tokens       Score (↑)    Pass@6 (↑)   Pass@7 (↑)
+           Static IMO25 prover                     N/A    4.07 ±0.42   55.0% ±6.4   55.0% ±6.4
+           HGM-H prover                          21.5M    3.73 ±0.43   51.7% ±6.5   45.0% ±6.4
+           RQGM prover (generalist)              37.9M    3.73 ±0.43   51.7% ±6.5   45.0% ±6.4
+           RQGM prover (specialist)              88.0M    4.33 ±0.41   61.7% ±6.3   48.3% ±6.5
+
+
+Proof writing. As shown in Tab. 3, the RQGM generalist performs similarly to the HGM-H at matched
+search tokens. Divergence appears at longer horizons where the HGM-H stagnates. The RQGM spe-
+cialist prover achieves the best panel-mean score and Pass@6 score; without our own grader in the
+panel, it still matches the static IMO25 prover (4.03 vs. 4.08) and beats HGM-H (3.60). As we show
+in Sec. 5.4, this is enabled by a co-evolved grader that exceeds ProofAutoGrader and HGM-H.
+A more nuanced comparison is the IMO25 baseline of Huang and Yang [28], a human-engineered
+verification-and-refinement pipeline that achieved gold-medal performance at IMO 2025. The RQGM
+specialist attains a higher panel-mean score despite using no hand-engineered Olympiad-specific
+scaffold, but achieves this by finding more near-complete proofs (6 of 7). Details appear in App. D.
+
+  RQ2: Co-evolving agents with learned evaluators outperform fixed-evaluator baselines: co-evolved writ-
+  ers reach markedly higher reviewer-panel acceptance than fixed-evaluator writers.
+
+
+5.3   E VALUATOR REPLACEMENTS ACT AS A CURRICULUM ON THE SEARCH (RQ3)
+
+A mechanism by which the RQGM can improve task agents is that a progressively harsher evaluator
+imposes a curriculum-like effect on the task agents. For this, each evaluator transition must re-rank
+the search under the stricter criterion while preserving strong lineages, so that the search advances.
+Macro view: each replacement re-ranks the archive. If replacements merely sharpened pass-rate
+estimates without changing which agents the search favors, no curriculum could arise. Figure 4
+shows that part of the ranking persists across a transition, since evaluator-independent evidence car-
+ries through, but the re-ordering never recovers. Without erasure the ranking remains highly stable.
+
+
+                                                      7
+                                 1.0
+                                             code review                    Paper review                             Proof grading
+
+Spearman ρ vs. pre-replacement
+                                 0.9
+
+                                 0.8
+
+                                 0.7
+
+                                 0.6
+
+                                 0.5       Replacement at 258 evals
+                                           Replacement at 512 evals                                                          Replacement at 1,024 evals
+                                           Replacement at 2,050 evals               Replacement at 8,192 evals               Replacement at 2,048 evals       No-erasure control
+                                 0.4
+                                       0    100        1,000            0            100        1,000            0              100      1,000            0             100        1,000
+                                                                                      Task evaluations since replacement
+
+  Figure 4: Evaluator replacements permanently re-rank the archive. Each curve tracks one re-
+  placement, plotting the Spearman 𝜌 between post- and pre-replacement rankings as evaluations ac-
+  cumulate: 𝜌 = 1 (dotted) is the unchanged order, 𝜌 = 0 indicates an uncorrelated reordering. Across
+  all three tasks 𝜌 settles well below 1 and never recovers. The no-erasure control (rightmost) stays
+  high (𝜌 ≥ 0.90), showing erasure is necessary for utility transitions to guide search.
+
+
+
+
+                                                                                                                                  Best-belief winner
+                                                                                                                                  Winning lineage
+                                                                                                                                  Promoted into the top-8
+                                                                                                                                  Churned out of the top-8
+
+
+
+                                                                                                                          0.0         0.2           0.4          0.6          0.8          1.0
+                                                                                                                                              Best-belief utility
+
+  Figure 5: Evaluator replacement preserves the best lineage. The paper archive after replacement
+  (node color is best-belief utility, size tracks evidence count). The crimson winning lineage survives.
+  Among the top-8 nodes, every prior member is re-ranked (rings mark promotions and churn).
+
+
+  Micro view: the curriculum advances a backbone lineage. Figure 5 shows that the archive con-
+  centrates evidence on a few backbone lineages. While candidates are often re-ranked, the best lin-
+  eage stays resilient, suggesting the curriculum improves candidates around a stable backbone.
+
+                                 RQ3: Evaluator replacements drive a curriculum-like search: erasure lets each stricter criterion re-rank
+                                 the archive toward new candidates, while a resilient backbone keeps the population progressing.
+
+
+
+  5.4                                  C O - EVOLUTION IMPROVES THE EVALUATORS THEMSELVES (RQ4)
+
+  Proof grading. As shown in Fig. 6, the co-evolved grader is the strongest judge, outperforming the
+  static baselines and the best HGM-H grader at 3× lower search cost; the specialist and generalist co-
+  incide in a single node. This better grader drives the prover gains of Tab. 3. Similarly, on DeepSWE,
+  only the top reviewer rejects most failing patches (Tab. 15) with the others being overly lenient.
+  Paper review. The HGM-H reviewer scoring writers in Tab. 2 accepts AI-generated papers at 1.42×–
+  1.91× the rate of human ones. After each evaluator replacement in the RQGM, the AI-generated
+  papers the displaced reviewer had accepted form an adversarial pool, and the next epoch additionally
+  rewards evolved reviewers for rejecting them. As shown in Fig. 7, the search then selects a reviewer
+  that is harsh specifically on AI-generated text, which costs raw accuracy by construction and leaves
+  our best-found reviewer below the lenient HGM-H. However, this calibrates the reviewer to accept
+  AI-generated and human-written papers at similar rates while retaining 80% ground-truth accuracy.
+
+
+                                                                                                           8
+                                                                            - (published)                                                                             prover (specialist)          prover (generalist)         - prover
+
+
+
+
+accuracy (%) ↑
+                          76%
+
+
+
+
+                                                                                                                         Best-belief utility (ε = 0.05) ↑
+                          74%                                                                                                                               60%
+
+                          72%
+
+                          70%
+                                   RQGM grader (specialist & generalist)                                                                                    40%
+                          68%      HGM-H grader                                                                                                                                                   RQGM grader (specialist)
+                          66%                                                                                                                                                                     RQGM grader (generalist)
+                                                                                                                                                                                                  HGM-H grader
+                                                                                                                                                                                                  evaluator replacement
+-
+
+
+
+
+                          64%
+                                                                                                                                                            20%
+                                0.06            0.07               0.08                0.09                   0.10                                                0    20                    40                60                 80
+
+                                                  Normalized grading MAE ↓                                                                                               Search tokens (millions, blended) ↓
+
+     Figure 6: The co-evolved RQGM grader reaches the best IMO-GradingBench accuracy at 3×
+     lower search cost than HGM-H. Left: IMO-GradingBench accuracy of selected graders against
+     grading mean absolute error (MAE). Right: best-belief utility over tokens for graders (triangles) and
+     provers (circles). Utility drops at each evaluator replacement (crown), with shading marking epochs,
+     as erasure discards the displaced records, then re-climbs.
+                                                                       - (published)                                                                                  writer (specialist)           writer (generalist)        - writer
+
+                          90%
+                                   RQGM reviewer (adversarial)
+reviewer accuracy (%) ↑
+
+
+
+
+                                                                                                                         Best-belief utility (ε = 0.05) ↑
+                                   RQGM reviewer (specialist)                                                                                               80%
+                          85%      RQGM reviewer (generalist)
+                                   HGM-H reviewer
+                          80%                                                                                                                               60%                                                   RQGM reviewer (adversarial)
+                                                                                                                                                                                                                  RQGM reviewer (specialist)
+                                                                                                                                                                                                                  RQGM reviewer (generalist)
+                          75%                                                                                                                                                                                     HGM-H reviewer
+                                                                                                                                                            40%                                                   evaluator replacement
+
+                          70%
+                                                                                                    dataset                                                 20%
+                          65%                                                                 balanced rate
+
+
+                          60%                                                                                                                               0%
+                                            20%                  30%               40%                   50%                                                      0   50                    100              150               200
+
+                                                  Reviewer acceptance rate (%)                                                                                           Search tokens (millions, blended) ↓
+
+     Figure 7: The adversarial RQGM reviewer accepts AI and human papers at similar rates. Left:
+     APReS accuracy of selected reviewers against acceptance rate; the dashed line marks the dataset’s
+     50% accept rate; its 32% acceptance matches its 29–31% on writer papers (Tab. 2). Right: the same
+     run over tokens, showing best-belief utility for reviewers (triangles) and writers (circles); at the
+     adversarial-pool replacement the generalist’s average best-belief drops as erasure re-ranks the af-
+     fected utilities, then re-climbs under the harsher criterion.
+
+
+                          RQ4: Co-evolution finds a stronger grader at lower cost than fixed-evaluator baselines and, by introducing
+                          an adversarial objective at an epoch boundary, corrects a reviewer’s self-preference bias.
+
+
+     6                      C ONCLUSION
+     We introduced the Red Queen Gödel Machine (RQGM), a framework in which evaluators co-evolve
+     with the agents they score. Through controlled utility evolution, the search objective can change at
+     epoch boundaries while remaining fixed within each epoch, which has three consequences. First,
+     where ground truth exists, a co-evolved evaluator adds a complementary search signal, and co-
+     evolved coders outperform the HGM-H baseline on both coding benchmarks. Second, co-evolving
+     the evaluator alongside the generator enables improvement on hard-to-verify tasks such as paper and
+     proof writing, where a fixed benchmark cannot score the artifact directly. Third, the search can adopt
+     interventions that a fixed objective cannot express, such as a curriculum or an adversarial term. At
+     longer horizons, we believe these mechanisms could help push the frontier of AI capabilities.
+
+
+
+
+                                                                                                                     9
+ACKNOWLEDGMENTS
+This research was supported by the following entities: NVIDIA, The Royal Academy of Engineering
+via DANTE (a RAEng Chair); the European Research Council, specifically the REDIAL project;
+SPRIND under the composite learning challenge; Foresight Institute via the AI Safety Grant; Google
+through a Google Academic Research Award. We also thank Mara Darin Agha for advising on the
+narrative of this work and its related artifacts, and for constructing their visual language and design.
+
+AI U SE S TATEMENT
+We used GPT-5.5, GPT-5.6 Sol, and GPT-6 Astra in the experimental work reported in
+this paper. Nemotron 3 Ultra was used for the reward-design experiment, and Nemotron 3
+Super and Nemotron 3 Ultra for ablations present in the Appendix.
+We used GPT-5.5 and GPT-5.6 Sol to polish writing, abbreviate or rephrase text, evaluate its
+clarity, and identify areas for improvement. These models also assisted with discovery of additional
+papers for our extended literature review in App. H, building on the authors’ initial review.
+We used GPT-5.5 and GPT-6 Astra to generate plotting code and as general code assistants.
+Finally, we used GPT-6 Astra and GPT-5.6 Sol to assist with experiments and check proofs.
+
+E THICS STATEMENT
+This work automates the writing and reviewing of scientific papers, which carries a dual-use risk:
+automated writers could be used to flood peer review with generated submissions, and automated
+reviewers could be deployed in place of human judgment. No generated paper was submitted to any
+venue or shown to human reviewers, and all reviewing experiments use the public APReS dataset.
+Our results bear on this risk directly: fixed LLM reviewers accept AI-generated papers more readily
+than human ones, and the RQGM’s adversarial objective produces a reviewer that is equally stringent
+on both. We view calibrated automated evaluation as a safeguard for peer review, not a replacement
+for it. The work involves no human subjects or personal data.
+
+R EPRODUCIBILITY STATEMENT
+All implementation details needed to reproduce our results are provided in App. B, along with the
+experimental setup in App. C. Additional results and ablations are in App. D. The supplementary
+zip contains the anonymized code together with a README and scripts that give step-by-step in-
+structions to install the system, check the installation on a toy domain, and run both RQGM and the
+HGM-H baseline in every domai.
+
+R EFERENCES
+  [1] Jenny Zhang, Shengran Hu, Cong Lu, Robert Tjarko Lange, and Jeff Clune. Darwin Gödel
+      Machine: Open-ended evolution of self-improving agents. In International Conference on
+      Learning Representations (ICLR), 2026.
+  [2] Wenyi Wang, Piotr Pi˛ekos, Li Nanbo, Firas Laakom, Yimeng Chen, Mateusz Ostaszewski,
+      Mingchen Zhuge, and Jürgen Schmidhuber. Huxley-Gödel Machine: Human-Level Coding
+      Agent Development by an Approximation of the Optimal Self-Improving Machine. In Inter-
+      national Conference on Learning Representations (ICLR), 2026.
+  [3] Jenny Zhang, Bingchen Zhao, Wannan Yang, Jakob N. Foerster, Jeff Clune, Minqi Jiang, Sam
+      Devlin, and Tatiana Shavrina. HyperAgents. arXiv preprint arXiv:2603.19461, 2026.
+  [4] Leigh Van Valen. A new evolutionary law. Evolutionary Theory, 1973.
+  [5] Chris Lu, Cong Lu, Robert Tjarko Lange, Yutaro Yamada, Shengran Hu, Jakob Foerster,
+      David Ha, and Jeff Clune. Towards end-to-end automation of AI research. Nature, 2026.
+
+
+                                                  10
+ [6] Yutaro Yamada, Robert Tjarko Lange, Cong Lu, Shengran Hu, Chris Lu, Jakob Foerster, Jeff
+     Clune, and David Ha. The ai scientist-v2: Workshop-level automated scientific discovery via
+     agentic tree search. arXiv preprint arXiv:2504.08066, 2025.
+ [7] Thang Luong, Dawsen Hwang, Hoang H. Nguyen, Golnaz Ghiasi, Yuri Chervonyi, Insuk
+     Seo, Junsu Kim, Garrett Bingham, Jonathan Lee, Swaroop Mishra, Alex Zhai, Clara Huiyi
+     Hu, Henryk Michalewski, Jimin Kim, Jeonghyun Ahn, Junhwi Bae, Xingyou Song, Trieu H.
+     Trinh, Quoc V. Le, and Junehyuk Jung. Towards robust mathematical reasoning. In EMNLP,
+     pages 35418–35442. Association for Computational Linguistics, 2025.
+ [8] Sergey Levine, Peter Pastor, Alex Krizhevsky, Julian Ibarz, and Deirdre Quillen. Learning
+     hand-eye coordination for robotic grasping with deep learning and large-scale data collection.
+     Int. J. Robotics Res., 2018.
+ [9] Benjamin Burger, Phillip M. Maffettone, Vladimir V. Gusev, Catherine M. Aitchison, Yang
+     Bai, Xiaoyan Wang, Xiaobo Li, Ben M. Alston, Buyi Li, Rob Clowes, Nicola Rankin, Bran-
+     don Harris, Reiner Sebastian Sprick, and Andrew I. Cooper. A mobile robotic chemist. Na-
+     ture, 2020.
+[10] Marcin Andrychowicz, Filip Wolski, Alex Ray, Jonas Schneider, Rachel Fong, Peter Welin-
+     der, Bob McGrew, Josh Tobin, OpenAI Pieter Abbeel, and Wojciech Zaremba. Hindsight ex-
+     perience replay. In Conference on Neural Information Processing Systems (NeurIPS), 2017.
+[11] Haoyan Yang, Mario Xerri, Solha Park, Huajian Zhang, Yiyang Feng, Sai Akhil Kogilathota,
+     and Jiawei Zhou. Self-improvement of large language models: A technical overview and
+     future outlook. Transactions on Machine Learning Research, 2026.
+[12] Simon Ott, Adriano Barbosa-Silva, Kathrin Blagec, Jan Brauner, and Matthias Samwald.
+     Mapping global dynamics of benchmark creation and saturation in artificial intelligence. Na-
+     ture Communications, 2022.
+[13] Wenqi Huang, Charley Lee, Leonard Tng, and Serena Ge. DeepSWE: Measuring frontier
+     coding agents on original, long-horizon engineering tasks. arXiv preprint arXiv:2607.07946,
+     2026.
+[14] Jürgen Schmidhuber. Gödel machines: Self-referential universal problem solvers making
+     provably optimal self-improvements. CoRR, cs.LO/0309048, 2003.
+[15] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao
+     Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric P. Xing, Hao Zhang, Joseph E. Gonzalez,
+     and Ion Stoica. Judging LLM-as-a-judge with MT-bench and chatbot arena. In Conference
+     on Neural Information Processing Systems (NeurIPS), 2023.
+[16] Yann Dubois, Percy Liang, and Tatsunori Hashimoto. Length-controlled AlpacaEval: A sim-
+     ple debiasing of automatic evaluators. In Conference on Language Modeling (COLM), 2024.
+[17] Joar Skalse, Nikolaus H. R. Howe, Dmitrii Krasheninnikov, and David Krueger. Defining
+     and characterizing reward gaming. In Conference on Neural Information Processing Systems
+     (NeurIPS), 2022.
+[18] Weizhe Yuan, Richard Yuanzhe Pang, Kyunghyun Cho, Xian Li, Sainbayar Sukhbaatar, Jing
+     Xu, and Jason Weston. Self-rewarding language models. In International Conference on
+     Machine Learning (ICML), 2024.
+[19] Yinjie Wang, Ling Yang, Ye Tian, Ke Shen, and Mengdi Wang. Co-evolving LLM coder
+     and unit tester via reinforcement learning. In Conference on Neural Information Processing
+     Systems (NeurIPS), 2025.
+[20] Han Zhu, Chengkun Cai, Yuanfeng Song, Xing Chen, Sirui Han, and Yike Guo. Self-evolving
+     deep research via joint generation and evaluation. arXiv preprint arXiv:2606.04507, 2026.
+[21] Xing Zhang, Guanghui Wang, Yanwei Cui, Ziyuan Li, Wei Qiu, Bing Zhu, and Peiyang
+     He. Who grades the grader? co-evolving evaluation metrics and skills for self-improving
+     llm agents. arXiv prepritn arXiv:2607.12790, 2026.
+
+
+                                               11
+[22] Arjun Panickssery, Samuel R. Bowman, and Shi Feng. LLM evaluators recognize and favor
+     their own generations. In Conference on Neural Information Processing Systems (NeurIPS),
+     2024.
+[23] Alexander Pan, Erik Jones, Meena Jagadeesan, and Jacob Steinhardt. Feedback loops with
+     language models drive in-context reward hacking. In International Conference on Machine
+     Learning (ICML), 2024.
+[24] Yizao Wang, Jean-yves Audibert, and Rémi Munos. Algorithms for infinitely many-armed
+     bandits. In Advances in Neural Information Processing Systems (NIPS), 2008.
+[25] Bingchen Zhao, Jenny Zhang, Chenxi Whitehouse, Minqi Jiang, Michael Shvartsman, Ab-
+     hishek Charnalia, Despoina Magka, Tatiana Shavrina, Derek Dunfield, Oisin Mac Aodha, and
+     Yoram Bachrach. APReS: an agentic paper revision and evaluation system. arXiv preprint
+     arXiv:2603.03142, 2026.
+[26] Paul Gauthier. o1 tops aider’s new polyglot leaderboard. https://aider.chat/202
+     4/12/21/polyglot.html, 2024.
+[27] Li Zhang. CRAVE: Code Review Agent Verdict Evaluation. Hugging Face dataset, 2025.
+     URL https://huggingface.co/datasets/TuringEnterprises/CRAVE.
+     Code review classification dataset from curated human code reviews.
+[28] Yichen Huang and Lin F. Yang. Gemini 2.5 pro capable of winning gold at IMO 2025. arXiv
+     preprint arXiv:abs/2507.15855, 2025.
+[29] OpenAI. GPT-6 Astra: A new generation of intelligence. https://openai.com/ind
+     ex/gpt-6-astra/, 2026.
+[30] OpenAI. API pricing. https://openai.com/api/pricing/, 2026.
+[31] Anthropic. Pricing. https://platform.claude.com/docs/en/about-claud
+     e/pricing, 2026.
+[32] NVIDIA. Nemotron 3 super: Open, efficient mixture-of-experts hybrid mamba-transformer
+     model for agentic reasoning. arXiv preprint arXiv:2604.12374, 2026.
+[33] DeepInfra. Pricing. https://deepinfra.com/, 2026.
+[34] SWE-agent Team. mini-SWE-agent: The 100 line AI agent that solves GitHub issues. http
+     s://github.com/SWE-agent/mini-swe-agent, 2025.
+[35] NVIDIA. Nemotron 3 ultra: Open, efficient mixture-of-experts hybrid mamba-transformer
+     model for agentic reasoning. arXiv preprint arXiv:2606.15007, 2026.
+[36] Irving John Good. Speculations concerning the first ultraintelligent machine. Adv. Comput.,
+     1965.
+[37] Chunqiu Steven Xia, Zhe Wang, Yan Yang, Yuxiang Wei, and Lingming Zhang. Live-
+     SWE-agent: Can software engineering agents self-evolve on the fly? arXiv preprint
+     arXiv:2511.13646, 2025.
+[38] Eric Zelikman, Eliana Lorch, Lester Mackey, and Adam Tauman Kalai. Self-taught optimizer
+     (STOP): Recursively self-improving code generation. In Conference on Language Modeling
+     (COLM), 2024.
+[39] Xunjian Yin, Xinyi Wang, Liangming Pan, Li Lin, Xiaojun Wan, and William Yang Wang.
+     Gödel agent: A self-referential agent framework for recursively self-improvement. In Asso-
+     ciation for Computational Linguistics (ACL), 2025.
+[40] Chrisantha Fernando, Dylan Banarse, Henryk Michalewski, Simon Osindero, and Tim Rock-
+     täschel. Promptbreeder: Self-referential self-improvement via prompt evolution. In Interna-
+     tional Conference on Machine Learning (ICML), 2024.
+
+
+                                              12
+[41] Eric Zelikman, Yuhuai Wu, Jesse Mu, and Noah D. Goodman. Star: Bootstrapping reasoning
+     with reasoning. In Conference on Neural Information Processing Systems (NeurIPS), 2022.
+
+[42] William F. Shen, Alex Iacob, Zichen Zhang, Daoheng Wang, Wenyi Wang, Rui Liang, Yulong
+     Zhang, Xinchi Qiu, and Nicholas D. Lane. Star analyst: Self-tuning alpha research. SSRN
+     preprint, 2026. Available at SSRN: https://doi.org/10.2139/ssrn.6823940.
+
+[43] Maxime Robeyns, Martin Szummer, and Laurence Aitchison. A self-improving coding agent.
+     arXiv preprint arXiv:2504.15228, 2025.
+
+[44] Mingguang Chen et al. Recursive self-improvement in AI: From bounded self-refinement to
+     autonomous research loops. arXiv preprint arXiv:2607.07663, 2026.
+
+[45] Louis Kirsch and Jürgen Schmidhuber. Eliminating meta optimization through self-referential
+     meta learning. arXiv preprint arXiv:2212.14392, 2022.
+
+[46] Chris Lu, Sebastian Towers, and Jakob N. Foerster. Arbitrary order meta-learning with simple
+     population-based evolution. arXiv preprint arXiv:2303.09478, 2023.
+
+[47] Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao.
+     Reflexion: language agents with verbal reinforcement learning. In Conference on Neural
+     Information Processing Systems (NeurIPS), 2023.
+
+[48] Jiaxin Huang, Shixiang Gu, Le Hou, Yuexin Wu, Xuezhi Wang, Hongkun Yu, and Jiawei Han.
+     Large language models can self-improve. In Conference on Empirical Methods in Natural
+     Language Processing (EMNLP), 2023.
+
+[49] Jianqiao Lu, Wanjun Zhong, Wenyong Huang, Yufei Wang, Fei Mi, Baojun Wang, Weichao
+     Wang, Lifeng Shang, and Qun Liu. SELF: language-driven self-evolution for large language
+     model. arXiv preprint arXiv:2310.00533, 2023.
+
+[50] Zixiang Chen, Yihe Deng, Huizhuo Yuan, Kaixuan Ji, and Quanquan Gu. Self-play fine-
+     tuning converts weak language models to strong language models. In International Confer-
+     ence on Machine Learning (ICML), 2024.
+
+[51] Aviral Kumar, Vincent Zhuang, Rishabh Agarwal, Yi Su, John D. Co-Reyes, Avi Singh, Kate
+     Baumli, Shariq Iqbal, Colton Bishop, Rebecca Roelofs, Lei M. Zhang, Kay McKinney, Disha
+     Shrivastava, Cosmin Paduraru, George Tucker, Doina Precup, Feryal M. P. Behbahani, and
+     Aleksandra Faust. Training language models to self-correct via reinforcement learning. In
+     International Conference on Learning Representations (ICLR), 2025.
+
+[52] Shelly Bensal, Umar Jamil, Christopher Bryant, Melisa Russak, Kiran Kamble, Dmytro Mo-
+     zolevskyi, Muayad Ali, and Waseem AlShikh. Reflect, retry, reward: Self-improving LLMs
+     via reinforcement learning. arXiv preprint arXiv:2505.24726, 2025.
+
+[53] Adam Zweiger, Jyothish Pari, Han Guo, Ekin Akyürek, Yoon Kim, and Pulkit Agrawal. Self-
+     adapting language models. arXiv preprint arXiv:2506.10943, 2025.
+
+[54] Chengsong Huang, Wenhao Yu, Xiaoyang Wang, Hongming Zhang, Zongxia Li, Ruosen Li,
+     Jiaxin Huang, Haitao Mi, and Dong Yu. R-zero: Self-evolving reasoning llm from zero data.
+     In International Conference on Learning Representations (ICLR), 2026.
+
+[55] Andrew Zhao, Yiran Wu, Tong Wu, Quentin Xu, Yang Yue, Matthieu Lin, Shenzhi Wang,
+     Qingyun Wu, Zilong Zheng, and Gao Huang. Absolute zero: Reinforced self-play reasoning
+     with zero data. In Conference on Neural Information Processing Systems (NeurIPS), 2025.
+
+[56] Bo Liu, Chuanyang Jin, Seungone Kim, Weizhe Yuan, Wenting Zhao, Ilia Kulikov, Xian
+     Li, Sainbayar Sukhbaatar, Jack Lanchantin, and Jason Weston. SPICE: self-play in corpus
+     environments improves reasoning. arXiv preprint arXiv:2510.24684, 2025.
+
+[57] Jakub Grudzien Kuba, Mengting Gu, Qi Ma, Yuandong Tian, Vijai Mohan, and Jason Chen.
+     Language self-play for data-free training. arXiv preprint arXiv:2509.07414, 2025.
+
+
+                                              13
+[58] Yixing Chen, Yiding Wang, Siqi Zhu, Haofei Yu, Tao Feng, Muhan Zhang, Mostofa Patwary,
+     and Jiaxuan You. Multi-agent evolve: LLM self-improve through co-evolution. arXiv preprint
+     arXiv:2510.23595, 2025.
+
+[59] Hongxin Ding, Baixiang Huang, Yue Fang, Weibin Liao, Zheng Li, Jinyang Zhang, Zhijing
+     Wu, Junfeng Zhao, and Yasha Wang. Evorubrics: Dynamic rubrics as rewards via adversarial
+     co-evolution for llm reinforcement learning. arXiv preprint arXiv:2606.23038, 2026.
+
+[60] Zhibin Gou, Zhihong Shao, Yeyun Gong, Yelong Shen, Yujiu Yang, Nan Duan, and Weizhu
+     Chen. CRITIC: large language models can self-correct with tool-interactive critiquing. In
+     International Conference on Learning Representations (ICLR), 2024.
+
+[61] Mingchen Zhuge, Changsheng Zhao, Dylan R. Ashley, Wenyi Wang, Dmitrii Khizbullin,
+     Yunyang Xiong, Zechun Liu, Ernie Chang, Raghuraman Krishnamoorthi, Yuandong Tian,
+     Yangyang Shi, Vikas Chandra, and Jürgen Schmidhuber. Agent-as-a-judge: Evaluate agents
+     with agents. In International Conference on Machine Learning (ICML), 2025.
+
+[62] Runyang You, Hongru Cai, Caiqi Zhang, et al. A survey on agent-as-a-judge. arXiv preprint
+     arXiv:2601.05111, 2026.
+
+[63] Koki Wataoka, Tsubasa Takahashi, and Ryokan Ri. Self-preference bias in llm-as-a-judge.
+     arXiv preprint arXiv:2410.21819, 2024.
+
+[64] José Pombal, Ricardo Rei, and Andre Martins. Self-preference bias in rubric-based evaluation
+     of large language models. In Conference on Language Modeling (COLM), 2026.
+
+[65] Wei-Lin Chen, Zhepei Wei, Xinyu Zhu, Shi Feng, and Yu Meng. Do LLM evaluators prefer
+     themselves for a reason? arXiv preprint arXiv:2504.03846, 2025.
+
+[66] Janis Keuper. Prompt injection attacks on LLM generated reviews of scientific publications.
+     arXiv preprint arXiv:2509.10248, 2025.
+
+[67] Pat Pataranutaporn, Nattavudh Powdthavee, Chayapatr Achiwaranguprok, and Pattie Maes.
+     Can AI Solve the Peer Review Crisis? A Large Scale Cross Model Experiment of LLMs’
+     Performance and Biases in Evaluating over 1000 Economics Papers. arXiv preprint
+     arXiv:2502.00070, 2025.
+
+[68] Joachim Baumann, Jiaxin Pei, Sanmi Koyejo, and Dirk Hovy. Stop automating peer review
+     without rigorous evaluation. arXiv preprint arXiv:2605.03202, 2026.
+
+[69] Fengqing Jiang, Yichen Feng, Yuetai Li, Luyao Niu, Basel Alomair, and Radha Poovendran.
+     BadScientist: Can a research agent write convincing but unsound papers that fool LLM re-
+     viewers? In Association for Computational Linguistics (ACL), 2026.
+
+[70] Pat Verga, Sebastian Hofstätter, Sophia Althammer, Yixuan Su, Aleksandra Piktus, Arkady
+     Arkhangorodsky, Minjie Xu, Naomi White, and Patrick S. H. Lewis. Replacing judges
+     with juries: Evaluating LLM generations with a panel of diverse models. arXiv preprint
+     arXiv:2404.18796, 2024.
+
+[71] Vyas Raina, Adian Liusie, and Mark J. F. Gales. Is LLM-as-a-Judge Robust? Investigating
+     Universal Adversarial Attacks on Zero-shot LLM Assessment. In Conference on Empirical
+     Methods in Natural Language Processing (EMNLP), 2024.
+
+[72] Leo Gao, John Schulman, and Jacob Hilton. Scaling laws for reward model overoptimization.
+     In International Conference on Machine Learning (ICML), 2023.
+
+[73] Xiaohua Wang, Muzhao Tian, Yuqi Zeng, Zisu Huang, Jiakang Yuan, Bowen Chen, Jingwen
+     Xu, Mingbo Zhou, Wenhao Liu, Muling Wu, Zhengkang Guo, Qi Qian, Yifei Wang, Feiran
+     Zhang, Ruicheng Yin, Shihan Dou, Changze Lv, Tao Chen, Kaitao Song, Xu Tan, Tao Gui,
+     Xiaoqing Zheng, and Xuanjing Huang. Reward hacking in the era of large models: Mecha-
+     nisms, emergent misalignment, challenges. arXiv preprint arXiv:2604.13602, 2026.
+
+
+                                              14
+[74] Mohammad Beigi, Ming Jin, and Lifu Huang. Proxy reward internalization and mechanistic
+     exploitation: A learned precursor to reward hacking and its generalization. arXiv preprint
+     arXiv:2606.09711, 2026.
+
+[75] Binghai Wang, Chenlong Zhang, Dayiheng Liu, Jiajun Zhang, Jiawei Chen, Mingze Li,
+     Mouxiang Chen, Rongyao Fang, Siyuan Zhang, Xuwu Wang, Yuheng Jing, Zeyao Ma, and
+     Zeyu Cui. The verification horizon: No silver bullet for coding agent rewards. arXiv preprint
+     arXiv:2606.26300, 2026.
+
+[76] Naman Jain, King Han, Alex Gu, Wen-Ding Li, Fanjia Yan, Tianjun Zhang, Sida Wang, Ar-
+     mando Solar-Lezama, Koushik Sen, and Ion Stoica. Livecodebench: Holistic and contam-
+     ination free evaluation of large language models for code. In International Conference on
+     Learning Representations (ICLR), 2025.
+
+[77] Jungo Kasai, Keisuke Sakaguchi, Yoichi Takahashi, Ronan Le Bras, Akari Asai, Xinyan Yu,
+     Dragomir Radev, Noah A. Smith, Yejin Choi, and Kentaro Inui. Realtime QA: What’s the
+     answer right now? In Conference on Neural Information Processing Systems (NeurIPS),
+     2023.
+
+[78] Christopher D. Rosin and Richard K. Belew. New methods for competitive coevolution. Evol.
+     Comput., 1997.
+
+[79] Jürgen Schmidhuber and Jieyu Zhao. Multi-agent learning with the success-story algorithm.
+     In Gerhard Weiß, editor, Distributed Artificial Intelligence Meets Machine Learning, Learn-
+     ing in Multi-Agent Environments, 1996.
+
+[80] David Silver, Aja Huang, Chris J Maddison, Arthur Guez, Laurent Sifre, George Van
+     Den Driessche, Julian Schrittwieser, Ioannis Antonoglou, Veda Panneershelvam, Marc Lanc-
+     tot, et al. Mastering the game of Go with deep neural networks and tree search. Nature,
+     2016.
+
+[81] David Silver, Thomas Hubert, Julian Schrittwieser, Ioannis Antonoglou, Matthew Lai, Arthur
+     Guez, Marc Lanctot, Laurent Sifre, Dharshan Kumaran, Thore Graepel, Timothy Lillicrap,
+     Karen Simonyan, and Demis Hassabis. A general reinforcement learning algorithm that mas-
+     ters chess, shogi, and Go through self-play. Science, 2018.
+
+[82] Zhaotian Weng, Antonis Antoniades, Deepak Nathani, Zhen Zhang, Sophia Xiao Pu, and
+     Xin Eric Wang. Group-evolving agents: Open-ended self-improvement via experience shar-
+     ing. In Conference on Language Modeling (COLM), 2026.
+
+[83] Alkis Sygkounas, Rishi Hazra, Andreas Persson, Pedro Zuidberg Dos Martires, and Amy
+     Loutfi. Covolve: Adversarial co-evolution of large-language-model-generated policies and
+     environments via two-player zero-sum game. In Leonardo Trujillo and Ting Hu, editors,
+     Genetic and Evolutionary Computation Conference, GECCO, 2026.
+
+[84] Haoran Li, Zengle Ge, Ziyang Zhang, Xiaomin Yuan, Yui Lo, Qianhui Liu, Bocheng An,
+     Dongke Rong, Jiaqun Liu, Annan Li, Jianmin Wu, Dawei Yin, and Dou Shen. Beyond
+     static evaluation: Co-evolutionary mechanisms for llm-driven strategy evolution in adversar-
+     ial games. arXiv preprint arXiv:2606.10389, 2026.
+
+[85] Ziyang Liu, Xinyan Guo, Xuchen Wei, Han Hao, and Liu Yang. Escher-loop: Mutual evolu-
+     tion by closed-loop self-referential optimization. arXiv preprint arXiv:2604.23472, 2026.
+
+[86] Jason Weston and Jakob N. Foerster. AI & human co-improvement for safer co-
+     superintelligence. arXiv preprint arXiv:2512.05356, 2025.
+
+[87] Kenneth O. Stanley, Joel Lehman, and Lisa Soros. Open-endedness: The last grand challenge
+     you’ve never heard of. O’Reilly Radar, 2017. URL https://www.oreilly.com/ra
+     dar/open-endedness-the-last-grand-challenge-youve-never-heard
+     -of/.
+
+
+                                               15
+ [88] Edward Hughes, Michael D. Dennis, Jack Parker-Holder, Feryal M. P. Behbahani, Aditi
+      Mavalankar, Yuge Shi, Tom Schaul, and Tim Rocktäschel. Position: Open-endedness is essen-
+      tial for artificial superhuman intelligence. In International Conference on Machine Learning
+      (ICML), 2024.
+ [89] Jean-Baptiste Mouret and Jeff Clune. Illuminating search spaces by mapping elites. arXiv
+      preprint arXiv:1504.04909, 2015.
+ [90] Adrien Ecoffet, Joost Huizinga, Joel Lehman, Kenneth O. Stanley, and Jeff Clune. First
+      return, then explore. Nature, 2021.
+ [91] Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi
+      Fan, and Anima Anandkumar. Voyager: An open-ended embodied agent with large language
+      models. Transactions on Machine Learning Research, 2024.
+ [92] Alexander Novikov, Ngân Vu, Marvin Eisenberger, Emilien Dupont, Po-Sen Huang,
+      Adam Zsolt Wagner, Sergey Shirobokov, Borislav Kozlovskii, Francisco J. R. Ruiz, Abbas
+      Mehrabian, M. Pawan Kumar, Abigail See, Swarat Chaudhuri, George Holland, Alex Davies,
+      Sebastian Nowozin, Pushmeet Kohli, and Matej Balog. AlphaEvolve: A coding agent for
+      scientific and algorithmic discovery. arXiv preprint arXiv:2506.13131, 2025.
+ [93] Bernardino Romera-Paredes, Mohammadamin Barekatain, Alexander Novikov, Matej Balog,
+      M. Pawan Kumar, Emilien Dupont, Francisco J. R. Ruiz, Jordan S. Ellenberg, Pengming
+      Wang, Omar Fawzi, Pushmeet Kohli, and Alhussein Fawzi. Mathematical discoveries from
+      program search with large language models. Nature, 2024.
+ [94] Shengran Hu, Cong Lu, and Jeff Clune. Automated design of agentic systems. In Interna-
+      tional Conference on Learning Representations (ICLR), 2025.
+ [95] Jeff Clune. AI-GAs: AI-generating algorithms, an alternate paradigm for producing general
+      artificial intelligence. arXiv preprint arXiv:1905.10985, 2019.
+ [96] Juraj Gottweis, Wei-Hung Weng, Alexander Daryin, Tao Tu, Petar Sirkovic, Artiom
+      Myaskovsky, Grzegorz Glowaty, Felix Weissenberger, Alessio Orlandi, Dan Popovici, Anil
+      Palepu, Keran Rong, Ryutaro Tanno, Khaled Saab, Fan Zhang, Jacob Blum, Andrew Car-
+      roll, Kavita Kulkarni, Nenad Tomašev, Dina Zverinski, Ivor Rendulic, Elahe Vedadi, Florian
+      Hasler, Luka Rimanic, Marina Boia, Ivan Budiselic, Ben Feinstein, Mathias Bellaiche, Tom
+      Sheffer, Jan Freyberg, Jeremy Ratcliff, Ottavia Bertolli, Katherine Chou, Avinatan Hassidim,
+      Burak Gokturk, Amin Vahdat, Yuan Guan, Vikram Dhillon, Eeshit Dhaval Vaishnav, By-
+      ron Lee, Tiago R. D. Costa, José R. Penadés, Gary Peltz, Yossi Matias, James Manyika,
+      Demis Hassabis, Yunhan Xu, Pushmeet Kohli, Annalisa Pawlosky, Alan Karthikesalingam,
+      and Vivek Natarajan. Accelerating scientific discovery with Co-Scientist. Nature, 2026.
+ [97] Ali E. Ghareeb, Benjamin Chang, Ludovico Mitchener, Angela Yiu, Caralyn J. Szostkiewicz,
+      Dmytro Shved, Gavin J. Gyimesi, Jon M. Laurent, Samantha M. Wright, Muhammed T. Raz-
+      zak, Andrew D. White, Silvia C. Finnemann, Michaela M. Hinks, and Samuel G. Rodriques.
+      A multi-agent system for automating scientific discovery. Nature, 2026.
+ [98] Yougang Lyu, Xi Zhang, Xinhao Yi, Yuyue Zhao, Shuyu Guo, Wenxiang Hu, Jan Piotrowski,
+      Jakub Kaliski, Jacopo Urbani, Zaiqiao Meng, Lun Zhou, and Xiaohui Yan. Evoscientist:
+      Towards multi-agent evolving AI scientists for end-to-end scientific discovery. arXiv preprint
+      arXiv:2603.08127, 2026.
+ [99] Samuel Schmidgall and Michael Moor. Agentrxiv: Towards collaborative autonomous re-
+      search. arXiv preprint arXiv:2503.18102, 2025.
+[100] Ziming Luo, Atoosa Kasirzadeh, and Nihar B. Shah. The more you automate, the less you
+      see: Hidden pitfalls of AI scientist systems. arXiv preprint arXiv:2509.08713, 2025.
+
+
+
+
+                                                16
+                                   Table of Contents
+
+A Appendix Overview                                                                              18
+
+B Method Details and Algorithm                                                                   18
+   B.1 Search Space . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .    18
+   B.2 Three-Level Sampling Hierarchy . . . . . . . . . . . . . . . . . . . . . . . . . .        18
+   B.3 Co-Evolving Evaluation and Controlled Utility Evolution . . . . . . . . . . . .           18
+   B.4 The Algorithm in Full . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     19
+   B.5 Continuous Utilities . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .    20
+
+C Experimental Setup                                                                             20
+   C.1 Visualization Guide . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     20
+   C.2 Domains and Anchor Pairs . . . . . . . . . . . . . . . . . . . . . . . . . . . . .        20
+   C.3 Baselines and Agent Selection . . . . . . . . . . . . . . . . . . . . . . . . . . . .     20
+   C.4 Models and Run Identities . . . . . . . . . . . . . . . . . . . . . . . . . . . . .       21
+   C.5 Search and Scheduling Settings . . . . . . . . . . . . . . . . . . . . . . . . . . .      21
+   C.6 Data Splits . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   21
+   C.7 Held-Out Evaluation Protocols . . . . . . . . . . . . . . . . . . . . . . . . . . .       23
+   C.8 Reward-Design Curriculum . . . . . . . . . . . . . . . . . . . . . . . . . . . .          24
+   C.9 Initial Agents and Prompts . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      24
+
+D Results and Ablations                                                                          26
+   D.1 Held-Out Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .    26
+   D.2 Mechanism Ablations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .       26
+   D.3 Where Cost and Progress Come From . . . . . . . . . . . . . . . . . . . . . . .           28
+   D.4 Reducing search costs via hybrid-model approaches . . . . . . . . . . . . . . .           28
+
+E What the Co-Evolution Discovered                                                               29
+   E.1 What the Evolved Evaluators Changed . . . . . . . . . . . . . . . . . . . . . .           29
+   E.2 The Co-Evolved Grader . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .       30
+   E.3 The Polyglot Code Reviewer . . . . . . . . . . . . . . . . . . . . . . . . . . .          30
+   E.4 The DeepSWE Code Reviewer . . . . . . . . . . . . . . . . . . . . . . . . . . .           31
+   E.5 Winning Lineages . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      31
+
+F Theory                                                                                         34
+   F.1   Setting: the HGM Search Algorithm . . . . . . . . . . . . . . . . . . . . . . . . .     34
+   F.2   One Rule for Replacement and Selection . . . . . . . . . . . . . . . . . . . . .        35
+   F.3   Working-Posterior Consistency . . . . . . . . . . . . . . . . . . . . . . . . . . .     35
+   F.4   Epoch-Local Fixed-Utility Validity . . . . . . . . . . . . . . . . . . . . . . . . .    36
+   F.5   Supporting Results for Controlled Utility Evolution . . . . . . . . . . . . . . .       37
+
+
+                                                17
+    F.6   Evaluator Improvement . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .           38
+
+G Limitations                                                                                           39
+
+H Extended Related Work                                                                                 39
+
+
+A     A PPENDIX OVERVIEW
+
+The appendix gives the full algorithm (App. B), experimental setup (App. C), extended re-
+sults (App. D), what the co-evolution changed in the code (App. E), theory (App. F), limita-
+tions (App. G), and extended related work (App. H).
+
+
+B     M ETHOD D ETAILS AND A LGORITHM
+
+B.1   S EARCH S PACE
+
+Roles and task pools. Each node is a workspace holding 𝐾 roles R made up of task agents and
+evaluators, plus a meta-agent that edits the workspace [3]. Each role 𝑟 is scored on its own task
+pool D𝑟 ; a paper reviewer, for example, has one task for human-written and one for agent-generated
+papers. Since each task belongs to one role, we follow HyperAgents in calling every role’s agent
+a task agent when the role is clear.
+Evaluator slots and epochs. An evaluator-dependent role is scored through an evaluator slot whose
+epoch index counts its replacements. The 𝑀 ≤ 𝐾 slots are replaced independently, so their indices
+form an epoch vector 𝒋 ∈ N 𝑀 , and replacing one slot advances one entry.
+Epoch-local utility. Writing 𝑝 𝑟 ,𝑑, 𝒋 (𝑎) for node 𝑎’s success rate on task 𝑑 under epoch vector 𝒋, the
+utility of Sec. 3.1 becomes 𝑈 𝒋 (𝑎) = 𝐾1 𝑟 | D1𝑟 | 𝑑 ∈ D𝑟 𝑝 𝑟 ,𝑑, 𝒋 (𝑎). We average uniformly rather than
+                                           Í       Í
+by sample count because some tasks can generate unboundedly many evaluations.
+Data isolation. Feedback that creates nodes is kept apart from evidence that selects them (Sec. 4).
+For evaluator-independent roles, the splits of App. C.6 do this directly. For evaluator-dependent
+roles, the task agent generates fresh artifacts for training and for search, and only the search artifacts,
+scored by the epoch’s frozen evaluator, enter the utility.
+
+B.2   T HREE -L EVEL S AMPLING H IERARCHY
+
+The scheduler of Wang et al. [2] interleaves expansion and evaluation. With 𝑁𝑡 evaluations per-
+formed and expansion exponent 𝛼 ∈ (0, 1), a UCB-Air gate [24] expands when 𝑁𝑡𝛼 ≥ |T𝑡 | and
+evaluates otherwise, so the archive grows as O (𝑁𝑡𝛼 ). An expansion draws its parent 𝑎★ by Thomp-
+son sampling over CMP. An evaluation draws 𝑎★ over its own counts, then descends two lev-
+els: the least-evaluated eligible role 𝑟 ★ = arg min𝑟 𝑛𝑟 (𝑎★), then its least-evaluated eligible task
+𝑑★ = arg min𝑑 ∈ D𝑟★ 𝑛 𝑑 (𝑎★). A task is eligible unless its dataset is exhausted; a role is eligible if
+any of its tasks is. Outcomes accumulate at the node, and the role and task counters only balance
+load. Under this balancing, the pooled Beta posterior mean converges to 𝑈 𝒋 (𝑎) (Prop. 1).
+
+B.3   C O -E VOLVING E VALUATION AND C ONTROLLED U TILITY E VOLUTION
+
+Section 3.2 states the replacement rule, selective erasure, and checkpoint schedule. Formally, a utility
+transition (Def. F.2) replaces a slot’s evaluator and erases only the records that depended on it;
+evaluator replacement is one instance, and time-varying benchmarks or adversarial objectives fit
+the same structure. Old nodes are re-scored only when later evaluations return to them, and the
+sampling hierarchy above balances roles and tasks within each selected node. Exponentially spaced
+checkpoints keep the total record reprocessing linear in the budget (Prop. 6) and let later evaluators,
+each promoted on its own anchor, steer the rest of the search.
+
+
+                                                    18
+Algorithm 1: Red Queen Gödel Machine search with anchor-gated evaluator replacement and an
+optional adversarial pool.
+    Input: Seed workspace 𝑎 0 ; roles R; validation budget 𝐵; evaluator slots 1:𝑀
+    Input: Anchor sets GT[𝑚]; optional adversarial pools 𝑃[𝑚] ← ∅; checkpoints C; caps
+           ( 𝐵¯ exp , 𝐵¯ train , 𝐵¯ val ); best-belief level 𝜖
+    Output: Archive T and selected agent 𝑎★
+ 1    Initialize the frozen-epoch archive.
+ 2    T ← {𝑎 0 }; 𝑁 ← 0; 𝑗 [𝑚] ← 1 for all slots 𝑚
+ 3    𝐸 [𝑚] ← Freeze(Incumbent(𝑚)) for all slots 𝑚
+  4 Run CMP-guided search between checkpoints.
+  5 while 𝑁 < 𝐵 do
+  6     𝑏 ← min{𝑐 ∈ C : 𝑐 > 𝑁 } ∧ 𝐵                                                // next checkpoint
+  7     while 𝑁 < 𝑏 do
+  8         if ExpandGate(T , 𝑁) then
+  9              𝑎 𝑝 ← SampleCladeByCMP(T )
+ 10             if ¬TrainedEnough(𝑎 𝑝 ) then
+ 11                  TrainEval(𝑎 𝑝 , R, 𝐸, 𝐵¯ train )                  // demand-driven; lineage only
+ 12             end
+ 13                      𝑎 ′ ← EditWorkspace(𝑎 𝑝 , T , 𝐵¯ exp )
+ 14                      if Valid(𝑎 ′ ) then
+ 15                           T ← T ∪ {𝑎 ′ }
+ 16                      end
+17                else
+18                       𝑎 ← SampleNodeByCounts(T )                          // node-level HGM choice
+19                       (𝑟, 𝑑) ← LeastMeasuredCell(𝑎, R)                      // role/task balancing
+ 20                      𝑜 ← ValEval(𝑎, 𝑟, 𝑑, 𝐸, 𝑃, 𝐵¯ val )
+ 21                      AddUtilityRecord(T , 𝑎, 𝑟, 𝑑, 𝑜, j); 𝑁 ← 𝑁 + 1
+22                end
+23          end
+24          At checkpoint, replace evaluators by anchor (and pool) best-belief.
+25          foreach evaluator slot 𝑚 do
+26              Γ𝑚 ← {𝐸 [𝑚]} ∪ Challengers(𝑚, T )
+27              BB[𝑒] ← SlotBB 𝜖 (𝑒; GT[𝑚], 𝑃[𝑚]) for each 𝑒 ∈ Γ𝑚 // anchor-only if 𝑃[𝑚] = ∅
+28              𝑒★ ← Best(Γ𝑚 , BB; tie = 𝐸 [𝑚])
+29              if 𝑒★ ≠ 𝐸 [𝑚] then
+30                   if 𝑚 uses an adversarial pool then
+31                        𝑃[𝑚] ← AcceptedGenerations(𝐸 [𝑚])          // displaced evaluator’s
+                           accepts
+ 32                  end
+ 33                  𝑗 [𝑚] ← 𝑗 [𝑚] + 1; 𝐸 [𝑚] ← Freeze(𝑒★)
+ 34                  EraseSlotRecords(T , 𝑚); RecomputeCMPStats(T )
+35              end
+36          end
+37    end
+38    Select the final agent by best-belief over archive nodes.
+39    𝑎★ ← BestBeliefNode(T , 𝜖)
+40    return (T , 𝑎★)
+
+
+
+B.4     T HE A LGORITHM IN F ULL
+
+Algorithm 1 shows the RQGM further visualized in Fig. 8. Lines 1–3 freeze every evaluator slot on its
+incumbent; training is demand-driven, so a node is train-evaluated only when first chosen for expan-
+sion. Lines 4–22 run the CMP-guided search between checkpoints: the gate (line 8) either expands
+a parent drawn by metaproductivity into a child (lines 9–16), or spends one validation evaluation
+on the least-measured role–task cell of a node (lines 18–21). Lines 23–32 run only at checkpoints:
+each slot promotes the candidate with the highest anchor best-belief, ties to the incumbent, and on a
+change advances its epoch and erases the displaced evaluator’s records. Lines 34–36 return highest
+best-belief node.
+
+
+
+                                                                  19
+  (a) Controlled utility evolution across epochs                                                                                                                   fixed utility within each epoch
+
+    Epoch 1                       e(1)        Checkpoint                 Epoch 2                                e(2)      Checkpoint                 Epoch 3                                 e(3)
+                                              on ground truth                                                             on ground truth
+                                              e(1)                                                                        e(2)
+                                              e′                                                                          e′
+                                              e′′                                                                         e′′
+                                                   promote                                                                      promote
+                                                arg max BBϵ                                                                  arg max BBϵ
+    Frozen e(1) ; fixed U1 .                    erase e(1) records       Fixed U2 ; erased records re-scored.               ties keep incumbent      Fixed U3 ; epochs grow by ρ.
+
+                          τ                     2τ                                            4τ                                        geometrically spaced checkpoints (shown for ρ = 2)   8τ
+
+  (b) Archive node                                         shared workspace wa       (c) Within an epoch: expansion or evaluation
+                                                                                     Expand if Ntα ≥ |Tt |; otherwise evaluate.         Expand
+     Meta-agent: edits the code of any role
+                                                                                                                     clade C(a)         Thompson sampling on CMP selects parent a; its
+       task agents                         evaluators                                                                                   meta-agent writes a child.
+        Paper writer                         Paper reviewer                                                      a
+        Prover                               Proof grader
+                                                                                                                                        Evaluate
+        Coding agent                         Code reviewer
+                    fixed scoring and orchestration harness                                                                             Thompson sampling on (Sa , Fa ) selects a node, then
+                            1 ∑︁         1 ∑︁
+                                                                                           o ∈ {0, 1}                                   the least-evaluated role and task.
+               Uj (a) = |R|       r∈R |D |     d∈Dr pr,d,j (a)
+                                          r
+
+
+
+
+                               Scoring           task agent → frozen evaluator e(j) or fixed benchmark                           evaluator → ground-truth anchor
+                                         Symbols                archive node          erased record             new child              candidate evaluator
+
+
+
+Figure 8: Expanded view of RQGM. (a) Evaluators remain frozen within each epoch; geometrically
+spaced checkpoints compare candidates on ground-truth anchors, and replacement erases dependent
+records. (b) Each archive node contains a shared workspace of task agents, evaluators, and a meta-
+agent. (c) Within an epoch, search alternates expansion and evaluation (Algorithm 1).
+
+
+B.5        C ONTINUOUS U TILITIES
+
+Reward design scores each evaluation in [0, 1] rather than as pass or fail. To accommodate this, we
+modify the CMP to be the average utility over a node’s subtree. The Beta posteriors behind Thompson
+sampling and best-belief become Student-𝑡 posteriors over the mean utility, the exact marginal of a
+Normal–Gamma prior when the variance is unknown.
+
+C        E XPERIMENTAL S ETUP
+
+C.1        V ISUALIZATION G UIDE
+
+Each result figure pairs a ground-truth panel, which scores arms such as the RQGM generalist, spe-
+cialist, and HGM-H on a fixed anchor, with a search-trajectory panel of best-belief utility over search
+tokens. Circles mark task agents, down-triangles learned evaluators, and the crowned heart the se-
+lected best-belief winner. Trajectory heights are measured against each arm’s own evaluator, so
+only the ground-truth panel compares arms. A crown on a dashed rule marks an evaluator replace-
+ment, and shaded bands mark epochs; best-belief may drop at a replacement, as erasure discards
+the displaced evaluator’s records, and a value of 0 marks an epoch with no surviving record yet. A
+trajectory ends where its best-belief agent stops changing, and a dotted line continues it to the end
+of the matched budget. When the specialist and generalist are the same node, as for the DeepSWE
+coder, we draw a single line. Arrows give each metric’s preferred direction.
+
+C.2        D OMAINS AND A NCHOR PAIRS
+
+Figure 9 shows how each domain pairs a generator with a learned evaluator and a ground-truth
+anchor (Sec. 4). In the Polyglot run, the co-evolved code reviewer scores every coder patch as it
+is generated, alongside the benchmark’s executable tests.
+
+C.3        BASELINES AND AGENT S ELECTION
+
+Because the RQGM optimizes several utilities at once, we report two best-belief agents per run (if they
+dot coincide on the same node): the specialist, best on one target utility, and the generalist, best on
+their average (Sec. 4). The baselines and adversarial interventions are those of Sec. 4; we evaluate the
+available published HyperAgents patches in the paper and proof domains. Headline writer-panel
+uncertainties are 95% Jeffreys intervals and proof-panel uncertainties standard errors (App. C.7).
+
+
+                                                                                               20
+  evidence provenance                                                             anchors survive                slot-local records erase
+  artifact evidence splits before replacement
+                                                                                                                                            valid ledger
+                                                                                                           anchor                           kept / erased
+                                                           Polyglot exec tests
+              RQ3                                                                                          checkpoint gate
+                                                           CRAVE review labels
+              Coding / Polyglot
+                                                                                                                                                   slot
+              patch                                        code review slot, epoch
+                               two fixed anchors
+
+
+              RQ1 / RQ2                                    APReS decisions           adversarial samples
+              Paper Writing / Review                                                 epoch-local
+                                                                                                                                                   slot
+              draft                                        reviewer slot, epoch
+                                  not a replacement gate
+
+
+              RQ1 / RQ2                                    IMO-GradingBench grades
+              IMO Proofs / Grading
+                                                                                                                                                   slot
+              proof                                        grader slot, epoch
+                                  7/7 acceptance
+
+
+
+
+Figure 9: Each domain separates durable anchor evidence from epoch-local evaluator records.
+Left: fixed ground-truth anchors (solid lines) survive evaluator replacement, while epoch-frozen
+evaluator-slot records (dashed lines) are local to epoch 𝑗 𝑚 . Middle: only evaluator-independent an-
+chor evidence enters the 𝜖-best-belief evaluator replacement gate. Right: after replacement, anchors
+remain valid while records from the displaced evaluator slot are erased before epoch 𝑗 𝑚 + 1.
+
+
+Proof mechanism ablation. The control is coupled HGM: writer and grader code may both evolve,
+while the search evaluator stays fixed and the adversarial pool is disabled.
+
+C.4      M ODELS AND RUN I DENTITIES
+
+The headline Polyglot, paper, and proof runs, their held-out evaluations, and all panel-scoring
+calls use GPT-5.5 (low); the DeepSWE runs use GPT-6 Astra (Tab. 6). The cost ablation of
+App. D.4 switches only the search-time paper task agents to Nemotron 3 Ultra, in addition to
+Nemotron 3 Super [32] appears only in the mechanism ablations (App. D.2). Reported token
+totals include train-time calls. There are eight headline runs: an RQGM and an HGM-H run in each
+of the coding, paper, and proof domains, where one paper RQGM run yields the writer, reviewer,
+and adversarial reviewer, and one proof run yields the prover and grader. All runs share one total
+budget, and each agent is read where its search reaches its best-belief selection. The proof-domain
+mechanism ablation uses Nemotron 3 Ultra at medium reasoning for task agents, meta-agents,
+and downstream graders. It uses a 1,024-evaluation budget to bound the total cost.
+
+C.5      S EARCH AND S CHEDULING S ETTINGS
+
+Replacement and final selection share the 𝜖-best-belief rule of App. F.2.1, applied to nodes with at
+least 5 evaluations. Tables 4 and 5 list the fixed and meta-agent-editable settings; everything else
+follows Wang et al. [2]. Wang et al. [2] use 8,000 evaluations for one task.
+
+DeepSWE expansion warmup. The DeepSWE runs first build a warmup population, which is
+then exploited: the expansion exponent is 𝛼 = 2/3 until 600 search evaluations and 𝛼 = 1/2 after-
+wards, on the same cumulative counter, keeping every warmup node and outcome.
+Table 6 lists the configuration of the two DeepSWE runs.
+
+C.6      DATA S PLITS
+
+We split every dataset as in Sec. 4; the held-out protocols are in App. C.7. Per dataset:
+Coding / Polyglot and CRAVE. The coder uses 10 train, 49 validation, and 166 held-out
+Polyglot tasks, disjoint by task. The code reviewer uses CRAVE’s own train, validation, and
+test partitions: from each, we draw 100 pull requests with a fixed seed, balanced at 50 accepted and
+50 rejected, so no row crosses an upstream partition.
+
+
+                                                                                           21
+Table 4: Fixed search configuration shared by the eight headline runs. These constants are held
+fixed across every run and are not exposed to the meta-agent. No search cool-down is used.
+
+     Setting                                                      Value
+     Models and budget
+     Base model                                                   GPT-5.5 (low)
+     Ablation model                                               Nemotron 3 Super
+     Total budget per run                                         12,288 evaluations
+     Train samples per node                                       3
+     Selection and scheduling
+     Best-belief quantile                                         𝜖 = 0.05, five-outcome anchor minimum
+     Checkpoint schedule                                          power-of-two (𝜌 = 2)
+     UCB-Air expansion exponent                                   𝛼 = 0.6 (inherited, 2)
+     Expansion gate                                               expand when 𝑁𝑡𝛼 ≥ |T𝑡 |
+     Exploration–exploitation scheduler                           𝐵/𝑏 (𝑏 = remaining budget)
+     Data splits
+     Test sets (APReS/ IMO-GradingBench/ CRAVE)                   100 items each
+     Polyglot train split                                         10 items
+     Polyglot validation split                                    49 items
+     Polyglot test split                                          166 items
+     Budget caps
+     Expand cap                                                   $25, 1,200 s
+     Train cap                                                    $8, 900 s
+     Validation cap                                               $25, 1,200 s
+
+
+  Table 5: Meta-agent-editable surface and its initial values. The meta-agent may change any.
+
+                      Setting                               Initial value
+                      Output tokens per call                32,768
+                      Timeout, run                          86,400 s
+                      Timeout, eval                         1,200 s
+                      Timeout, LLM                          300 s
+                      Timeout, shell                        120 s
+                      Coder tool calls per task             ≤ 16
+                      Meta-agent tools                      persistent bash (120 s); editor
+                      Meta-agent tool calls per turn        ≤ 40
+
+
+Table 6: Search configuration of the two DeepSWE runs. Shared by both runs unless noted. Runs
+are compared on search tokens, not evaluation counts; the winners are the coders of Fig. 1.
+
+          Setting                                 Value
+          Models and budget
+          Meta-agent / task agents                GPT-6 Astra (high) / GPT-6 Astra (low)
+          Search tokens to winner                 587M (RQGM), 429M (HGM-H)
+          Measured train results per expansion    ≤ 16
+          Selection and scheduling
+          Best-belief quantile                    𝜖 = 0.05
+          Expansion exponent                      𝛼 = 2/3 for 𝑁𝑡 < 600, then 𝛼 = 1/2
+          Concurrent expansions                   ≤4
+          Data splits
+          Coder train / validation / test         28 / 57 / 28 tasks
+          Reviewer train / validation / test      56 / 114 / 56 rows
+          Limits
+          Expansion                               6h
+          Coder episode                           250 steps, 3 h
+          Task container                          2 CPUs, 8 GiB
+
+
+
+                                                       22
+   Table 7: GPT-6 Astra pass rates (%) on our held-out tasks and on the full benchmark.
+
+                   Tasks                        low         medium   high   xhigh    max
+                   Held-out (𝑛 = 28)            68.8         76.8    83.0   80.4     80.4
+                   Full DeepSWE (𝑛 = 113)       67.0         72.8    73.2   74.1     73.2
+
+                           Official mini-SWE-agent trials, four attempts per task.
+
+
+
+Coding / DeepSWE. DeepSWE v1.1 [13] contains 113 tasks across 91 repositories and five lan-
+guages, and publishes no train, validation, or test partition. We derive one from the official trial
+record, which reports every leaderboard run on every task.
+We order tasks by the failures of three reference models from the trial record, Claude Fable 5,
+Claude Opus 5, and GPT-5.6 Sol, across all five reasoning efforts (6,679 scored trials). A
+task’s difficulty key is the lexicographic tuple of its per-effort failure rates, ordered from max to low
+effort, so a task that resists a stronger attempt always ranks as harder. This key separates 106 of the
+113 tasks, against only 25 for a key built from the max-effort failure rate alone.
+We allocate whole repositories, never individual tasks, so no codebase appears in two splits. Among
+400 seeded greedy allocations refined by equal-size repository swaps, we keep the partition that
+best matches the three splits on the max-effort failure rate, the pooled failure rate across efforts, and
+language shares. The result has 28 train, 57 validation, and 28 test tasks. Validation is the largest
+split because it carries the search signal.
+Each task contributes one coder row and two reviewer rows in the same split: an accepted patch,
+taken from a real passing trial, and a rejected patch, taken from a real failing trial of the same three
+models. The rejected patch is chosen at the highest reasoning effort that failed (80 of 113 come from
+max effort) and, within it, as the most nearly correct attempt, with a mean of 91% of verifier tests
+passing. Both patches are model-written, so the pair differs in correctness alone. This gives 56, 114,
+and 56 balanced review rows. Neither role sees the verifier tests or the reference solution.
+Paper writing / review. We draw 100 APReS papers for each of train, validation, and test with
+a fixed seed, balanced at 50 accepted and 50 rejected, and disjoint by paper. The writer dataset of
+APReS titles and abstracts reuses exactly the same papers in each split, so no held-out paper is
+drafted or reviewed at any point during the search.
+IMO grading / proof writing. We draw 300 IMO-GradingBench human-graded proofs with
+a fixed seed and split them into 100 train, 100 validation, and 100 test items, stratified by grade.
+Provers are scored on 20 held-out IMO problems by the fixed grader panel of Tab. 3.
+The paper-domain mechanism and cost ablations reuse the paper splits, same for the proof do-
+main (Apps. D.2 and D.4).
+Reward design. Each of the three populations has six rows, one per independent reward-generation
+and PPO episode (App. C.8). Train rows are walking episodes that only the meta-agent can request.
+Validation rows are separate walking episodes with identical task text and simulator settings that
+score nodes; their composition changes with the curriculum. Held-out rows are six jumping episodes
+that no search-time task pool or scorer ever references.
+
+
+C.7   H ELD -O UT E VALUATION P ROTOCOLS
+
+Coding / Polyglot. Generated patches are checked by execution on 166 held-out tasks (Tab. 8).
+Coding / DeepSWE. The GPT-6 Astra reference is the official trial record filtered to our 28
+held-out tasks, four attempts per task. Figure 1 also shows its full-benchmark rates (Tab. 7).
+Each evolved coder runs under the benchmark’s container limits and a three-hour deadline, and the
+official verifier grades its committed patch (Tab. 9).
+Paper writing / review. Reviewers are scored on 100 held-out APReS papers for accuracy and
+acceptance rate (Tab. 8); each writer produces 100 papers, judged by the panel of Tab. 2.
+
+
+                                                       23
+IMO grading / proof writing. Graders are scored on 100 held-out IMO-GradingBench items
+for exact match and normalized mean absolute error. Each prover writes proofs for 20 IMO prob-
+lems, scored by three graders (Tab. 10); Pass@6 and Pass@7 count proofs scoring ≥ 6 and 7.
+Uncertainty. Writer-panel cells (Tab. 2) report 95% Jeffreys half-widths over 𝑁 = 100 papers,
+and the Mean column pools all 𝑁 = 400 paper–reviewer outcomes. Prover-panel cells (Tab. 3) pool
+𝑁 = 60 outcomes (20 problems × 3 graders) and report one standard error.
+Cost-reduction ablation. The Nemotron 3 Ultra ablation (App. D.4) follows the paper pro-
+tocol above, with Nemotron 3 Ultra for search-time task-agent calls and GPT-5.5 (low) for
+expansion and final APReS scoring. We convert its cost to GPT-5.5-price-equivalent blended to-
+kens using $5/$30 per M input/output tokens for GPT-5.5 [30] and $0.5/$2.2 for Nemotron 3
+Ultra [33]. About 20% of search cost is expansion, charged at GPT-5.5 prices, and 80% is input-
+heavy task-agent evaluation, charged at the input-price ratio 0.10; a Nemotron 3 Ultra total 𝐵
+therefore costs about 0.20𝐵 + 0.80(0.10𝐵) = 0.28𝐵. The selected reviewer (𝐵 = 6.68M) costs
+1.87M GPT-5.5-equivalent tokens.
+
+C.8   R EWARD -D ESIGN C URRICULUM
+
+Task. We port the Genesis reward-design domain of HyperAgents [3]. The task agent re-
+ceives a one-sentence task description and writes a compute_reward function for a Unitree Go2
+quadruped. A fixed host then trains a fresh PPO policy on that reward (4,096 parallel environments,
+101 iterations) and evaluates checkpoint 100 for 1,000 steps under the host’s own fixed fitness, so the
+generated reward shapes training but never scores itself. During search the task is to walk forward
+at a commanded speed in [0.2, 0.8] m/s, scored by command-tracking fitness in [0, 1]. The held-out
+task is jumping as high as possible, scored by maximum torso height in meters; a trial counts as a
+jump when it exceeds the 0.3494 score. The static arm and the curriculum arm share every setting
+except the curriculum.
+Curriculum. The obstacle is composed of two 0.8 m-high slabs meeting at a right angle, initially
+placed 2 m ahead of the robot; the robot starting positions are spread ±0.25 m sideways, so some
+robots walk straight into the obstacle/corner and others pass it. The observation carries no extero-
+ception, so the policy must respond to the obstacle from its own state. Stalled forward progress and
+backing away from the obstacle cost fitness. The validation pool grows by extension:
+
+• Stage 1 (from evaluation 1): two rows of the original walking task.
+• Stage 2 (from evaluation 20): adds two rows with 0.5 m-wide slabs.
+• Stage 3 (from evaluation 50): adds two rows with 1.0 m-wide slabs, which are hard to walk around
+  once the robot is caught in the corner between them.
+
+The task objective of walking forward remains on obstacle rows, with the fitness re-weighted partly
+from speed tracking toward holding heading. The training rows follow the same schedule, and the
+static arm keeps its six walking rows.
+Protocol. We run five searches per arm to 125 evaluations, where both arms publish comparable
+numbers of agents (22.0 and 21.2 per run on average). Each run’s best-belief agent then writes six
+fresh jumping rewards; each is trained and evaluated once, and the run’s score is the mean of the six.
+A generated reward that fails to load scores 0. Every PPO run draws a fresh seed.
+Cost. Both arms use Nemotron 3 Ultra at high reasoning for the meta-agent and task agent. Per
+run, the static arm spends 325 PPO trainings and 48.3M blended search tokens, and the curriculum
+arm 291 trainings and 53.8M (Tab. 1). HyperAgents reports about 600 trainings and 33.6M tokens
+with Claude Sonnet 4.5 over about 100 agents per run, which would be about $104 at list
+price [31], compared with $24–$27 for our runs at Nemotron 3 Ultra list price [33], a 3.85–
+4.33× reduction in cost.
+
+C.9   I NITIAL AGENTS AND P ROMPTS
+
+All GPT-5.5 experiments start from one workspace. Every task agent is a single LLM call from the
+shared template below plus a short per-domain output format, with no role-specific code. The only
+
+
+                                                  24
+engineered prompts belong to the controls, the frozen Sakana reviewer and ProofAutoGrader;
+every checklist, rubric, and acceptance standard reported later was produced by the search (App. E).
+  Shared task-agent template (all roles)
+  You are an agent.
+
+  Task input:
+  ```
+  {inputs}
+  ```
+
+  {output_format}
+
+
+The paper reviewer’s format is shown below; the other roles differ only in the schema they request.
+The coder also starts with bash and an editor, at most 16 tool calls per task.
+  Initial output format: paper reviewer (also scores writer outputs and the adversarial pool)
+  You are reviewing the paper above for a top ML venue. Read it carefully
+  and decide whether to Accept or Reject it.
+
+  Respond with one JSON block:
+  {
+    "Summary": "...", "Strengths": [...], "Weaknesses": [...],
+    "Decision": "Accept" | "Reject"
+  }
+  For "Decision", use only "Accept" or "Reject".
+
+
+The meta-agent is instructed to improve any part of the codebase, including its own loop, prompts,
+and tools. It reads each ancestor’s train-split predictions, meta-agent transcript, and code diff, but it
+is never shown any validation outcomes during the search.
+Runtime constants are in Tab. 5.
+DeepSWE workspace. Both DeepSWE searches start from one mini-SWE-agent harness [34]: the
+coder works in the repository through a single bash tool, for at most 250 steps, and submits the patch
+it commits. The RQGM code reviewer reads the task statement and the diff, never the verifier tests
+or reference solution, and co-evolves with the coder. The meta-agent may edit every workspace file,
+including its own loop, but not the fixed scoring harness.
+  DeepSWE initial code-reviewer instruction
+  Review the diff above and assess whether it solves the problem the
+  statement sets out.
+
+  Work from the statement. It is the specification, and the only one: take
+  the behaviour it asks for -- the inputs, options, calls and cases it
+  names -- and for each, find the code in the diff that delivers it and
+  judge whether that code is correct. ...
+
+  Accept when the diff correctly tackles the problem and provides the
+  solution the statement asks for. Reject when some behaviour it asks for
+  has no code behind it, or has code you can show is wrong. ...
+
+  Reply with one JSON block and nothing after it:
+  { "Reasoning": "...", "Decision": "Accept" | "Reject" }
+
+
+The DeepSWE meta-agent receives the prompt above, adapted to mini-SWE-agent, then this:
+  DeepSWE initial meta-agent domain instruction (opening, RQGM)
+  This expansion has a lifetime allowance of 16 individual measured training
+  results across every batch, code version, turn and resume. ...
+
+  A solver reads one real software-engineering task and emits a diff. The
+  initial reviewer reads the complete diff and problem statement in one
+  `chat` call and answers accept or reject. Its Python code also receives
+  inputs["repository"], the path to the complete task repository at its
+  pinned base revision. The patch has not been applied there. ... You may
+  evolve the reviewer to read files before its model call, add tools, or
+  use multiple turns. File selection, paths, searches and prompt
+  construction are your editable code; the host imposes no source-file
+
+
+
+
+                                                   25
+                 Table 8: Held-out reviewer and coder results behind Secs. 5.1 and 5.2.
+
+                     Reviewer                                   Accuracy (%)          Accept. (%)
+                     HGM-H specialist (node 51)                          88               45
+                     RQGM specialist (node 49)                           84               40
+                     RQGM generalist, pre-repl. (node 78)                84               42
+                     RQGM adversarial, post-repl. (node 31)              80               32
+                     DGM-H (published)                                   73               25
+                     Sakana prompt                                       63               13
+
+                                      Reviewers: held-out APReS papers.
+
+                                       Best-belief agent      Pass rate (%)
+                                       RQGM specialist            71.7
+                                       RQGM generalist            71.7
+                                       HGM-H                      69.9
+
+                                      Coders: held-out Polyglot tasks.
+
+                       Table 9: DeepSWE held-out pass rates (%) behind Fig. 1.
+
+                         Coder                                   low      medium        high
+                         RQGM coder                              82.1         85.7      85.7
+                         HGM-H coder                             75.0         78.6      82.1
+                         GPT-6 Astra (mini-SWE-agent)            68.8         76.8      83.0
+
+                          GPT-6 Astra is the mean of four official attempts per task.
+
+
+                            Table 10: Per-grader proof scores behind Tab. 3.
+
+                                 ProofAutoGrader HGM-H grader (node 45) RQGM grader (node 22)
+     Prover                      Mean P@6       P@7        Mean P@6            P@7       Mean P@6      P@7
+     Static IMO25 prover          4.05 55.0      55.0        4.10 55.0         55.0        4.05 55.0   55.0
+     HGM-H prover                 3.55 50.0      45.0        3.65 50.0         45.0        4.00 55.0   45.0
+     RQGM prover (generalist)     3.55 50.0      45.0        3.70 50.0         45.0        3.95 55.0   45.0
+     RQGM prover (specialist)     3.85 55.0      40.0        4.20 60.0         45.0        4.95 70.0   60.0
+
+
+
+    selection.
+
+
+
+
+D     R ESULTS AND A BLATIONS
+
+D.1     H ELD -O UT R ESULTS
+
+Table 10 splits the prover panel by grader. The RQGM specialist’s higher mean over the IMO25
+prover comes from more near-complete (6/7) proofs: on Pass@7 it trails IMO25 but beats HGM-H.
+Excluding the RQGM grader, which co-evolved with the specialist, the two independent graders give
+it 4.03, against 4.08 for IMO25 and 3.60 for HGM-H.
+
+
+D.2     M ECHANISM A BLATIONS
+
+We ablate evaluator replacement, the adversarial pool, and selective erasure in the paper domain with
+Nemotron 3 Super. In the proof domain, we compare replacement and pool interventions with
+Nemotron 3 Ultra against a coupled HGM control. Setup details are in Apps. C.3, C.4 and C.6.
+
+
+                                                        26
+Table 11: Mechanism ablations on the evaluator-independent anchor. All runs use a 12,288-
+evaluation budget. Reviewer anchor accuracy is comparable across runs, while writer acceptance
+(†), scored by each run’s own reviewer, is not. Cells report mean ± 95% Jeffreys interval.
+
+        Run                Repl.    Pool     Erase   Writer val. acc. (%)†      Reviewer anchor acc. (%)
+        Full mechanism      on       on       on           90.1 ±3.5                     95.0 ±10.3
+        Replacement only    on       off      on           89.5 ±13.7                    91.2 ±7.4
+        No erasure          on       on       off          90.0 ±10.7                    92.9 ±10.8
+        Fixed reviewer      off      off      –            100.0 ±1.7                    78.2 ±4.4
+
+
+Table 12: Proof-writing mechanism ablations on the full held-out set. Completed proofs are
+scored by a common three-grader panel. Cells report the mean 0–7 score with 95% problem-cluster
+bootstrap intervals over all held-out problems in the campaign.
+
+                                 Condition           Prover-specialist score ↑
+                                 Full mechanism            3.60 [2.55, 4.67]
+                                 Pool off                  3.14 [2.13, 4.20]
+                                 Transitions off           2.64 [1.74, 3.55]
+                                 Coupled HGM               3.05 [2.11, 4.04]
+
+
+Table 13: Proof-grading mechanism ablations. All four graders are evaluated on the same 548
+human-labeled items across 20 problems. Brackets contain 95% problem-cluster bootstrap intervals.
+
+                     Condition             Exact agreement (%) ↑               MAE/7 ↓
+                     Full mechanism           67.3 [57.6, 76.9]         0.122 [0.088, 0.160]
+                     Pool off                 58.8 [47.6, 69.8]         0.169 [0.122, 0.217]
+                     Transitions off          56.0 [44.7, 67.2]         0.197 [0.146, 0.247]
+                     Coupled HGM              65.7 [55.9, 75.1]         0.141 [0.098, 0.185]
+
+
+
+
+D.2.1   PAPER D OMAIN
+
+Table 11 compares the full mechanism with runs that drop the pool, erasure, or replacement.
+The fixed reviewer saturates. Without replacement, the writer ends with all 75 validation papers
+accepted, far above the human acceptance rate of the APReS data.
+Replacement escapes that plateau. With replacement but no pool, the reviewer reaches 52/57 on
+the anchor; the writer re-bases after each replacement instead of saturating one judge. The pool then
+decides which reviewer wins (Sec. 5.4), which matters most for reviewing generated papers.
+Without erasure the utility becomes outdated. Rows scored by retired reviewers stay in the utility,
+and replacements stop as outdated evidence accumulates, making the search revisit the same nodes.
+
+
+D.2.2   P ROOF D OMAIN
+
+Tables 12 and 13 compare the full mechanism against runs without the pool, without transitions, and
+a coupled HGM control. Prover specialists and grader specialists are selected without held-out scores.
+The full mechanism finds the best grader. It reaches 67.3% agreement with human grades, against
+65.7% for coupled HGM, 58.8% without the pool, and 56.0% without transitions, and it also has the
+lowest normalized grading error of the four conditions compared.
+The full mechanism finds the best prover. The full-mechanism specialist scores 3.60/7, against
+3.05 for coupled HGM, 3.14 without the pool, and 2.64 without transitions.
+
+
+                                                      27
+      𝙿𝚘𝚕𝚢𝚐𝚕𝚘𝚝          18%                 14%                                             68%
+
+
+
+          Paper          19%                12%                                             69%
+
+
+
+          Proof           23%                     12%                                         65%
+
+
+  DeepSWE 𝚁𝚀𝙶𝙼                   29%                                                        68%
+
+
+ DeepSWE 𝙷𝙶𝙼-𝙷                  26%                                                        70%
+
+
+                  0.0                 0.2                   0.4                    0.6                           0.8                           1.0
+                                                            Share of blended tokens
+
+                                                                       Expansion         Train-time evaluation         Validation evaluation
+
+
+
+Figure 10: Blended-token cost of the five headline runs by expansion, train-time evaluation, and
+validation evaluation, for the three GPT-5.5 runs and the two DeepSWE runs.
+
+Table 14: Blended-token decomposition of the DeepSWE searches (millions). To winner rows
+count tokens until each best coder was generated; full run rows count the full search.
+
+                        Run                         Expansion        Train     Validation              Total
+                        RQGM, to winner                  55.5        446.1           85.6              587.2
+                        RQGM, full run                  107.3        821.4         1948.2             2876.8
+                        HGM-H, to winner                 44.0        303.6           81.0              428.6
+                        HGM-H, full run                  85.1        664.4         1783.2             2532.7
+
+
+
+D.3     W HERE C OST AND P ROGRESS C OME F ROM
+
+D.3.1    C OST DECOMPOSITION
+
+Every model call is an expansion, a train-time evaluation, or a validation evaluation. Validation
+dominates: across the three GPT-5.5 runs it carries 65–69% of blended tokens, expansion 18–
+23%, and train-time evaluation 12–14% at three train samples per node (Fig. 10).
+The DeepSWE runs follow the same pattern with a smaller expansion share, since each evaluation
+is a long agentic episode: validation carries 68% and 70% of the RQGM and HGM-H runs, train-time
+evaluation 29% and 26%, and expansion 4% and 3% (Tab. 14). Before each winner was generated,
+most tokens went to the train-time evaluations the meta-agents request while editing.
+
+D.3.2    PATCH SURFACES
+
+We classify each accepted patch by the code it modifies. Shared surfaces, task-agent code and infras-
+tructure used by more than one role, carry 59–90% of accepted patches in every GPT-5.5 run and
+dominate in Polyglot (Fig. 11); the Nemotron 3 Super run instead targets the meta-agent’s
+instruction module in 42% of edges. On DeepSWE, 83% of RQGM code patches do (App. E.5).
+
+
+D.4     R EDUCING SEARCH COSTS VIA HYBRID - MODEL APPROACHES
+
+Expansion is only about 20% of search cost (Fig. 10). We therefore keep the GPT-5.5 (low) meta-
+agent and route search-time task-agent calls through Nemotron 3 Ultra [35].
+This cuts price-equivalent search cost by about 13× while nearly matching the GPT-5.5-only run’s
+held-out accuracy on the 100 APReS test papers (Fig. 12).
+
+
+                                                                28
+                  𝙿𝚘𝚕𝚢𝚐𝚕𝚘𝚝
+
+                                Paper
+
+                                 Proof
+
+        Reviewer (𝙷𝙶𝙼-𝙷)
+
+ Writer (frozen reviewer)
+
+    Prover (frozen grader)
+
+          Grader (𝙷𝙶𝙼-𝙷)
+
+     𝙽𝚎𝚖𝚘𝚝𝚛𝚘𝚗 full mech.
+
+                                         0.0              0.2                0.4                   0.6                       0.8                         1.0
+                                                                               Share of lineage edges
+                                                                                                         Task-agent shared   Role-specific       Notes
+                                                                                                         Infrastructure      Meta-agent module
+
+
+
+
+Figure 11: Patch surfaces by run, classifying each accepted lineage edge by the code surface it
+modifies (task-agent shared, infrastructure, role-specific, meta-agent module, or notes).
+
+
+                                                                         price-equivalent tokens saved
+              𝙰𝙿𝚁𝚎𝚂 accuracy (%) ↑
+
+
+
+
+                                     84%
+
+                                     82%
+
+                                     80%
+                                                                          13.0 × lower cost
+                                     78%       GPT-5.5
+                                               Nemotron 3 Ultra
+
+                                           0             5              10               15                  20                    25
+                                                                Search tokens (millions, blended) ↓
+
+Figure 12: Nemotron 3 Ultra task-agent calls approach the GPT-5.5-only run at ≈ 13.0×
+lower price-equivalent search cost. Held-out APReS accuracy is scored with GPT-5.5 in both
+runs; costs are GPT-5.5-price-equivalent blended tokens (App. C.7).
+
+
+E      W HAT THE C O -E VOLUTION D ISCOVERED
+
+Each evaluator is a prompt entry in the shared workspace, so its history can be read off its lineage.
+The search’s most common move, in every role, turns the one-line initial instruction (App. C.9) into
+a specific rubric, and we quote the rules it produced below.
+
+E.1      W HAT THE E VOLVED E VALUATORS C HANGED
+
+The adversarial reviewer’s lineage rewrote the initial instruction into a conjunctive acceptance stan-
+dard; the displaced generalist carries a two-sided calibration.
+
+    Evolved rule: the adversarial reviewer’s conjunctive standard (gen 4)
+    ... Use a realistic selective-conference standard: accept only if the
+    paper has a clear nontrivial contribution, technically sound
+    methodology/theory or experiments, adequate positioning against prior
+    work, and claims supported by evidence; reject papers with missing
+    validation, unclear novelty, serious technical gaps, or overclaiming.
+    Do not be swayed by fluent writing alone.
+
+
+
+
+                                                                              29
+  Evolved rule: the displaced generalist’s two-sided calibration
+  ... Calibrate the decision holistically rather than requiring
+  perfection: a paper with a coherent contribution and adequate evidence
+  should be accepted despite presentation flaws, while impressive writing
+  without substantiated experiments or technical substance should be
+  rejected.
+
+
+Both wordings appeared early; the adversarial pool decided which lineage was selected, favoring the
+one that rejects more AI-generated papers without losing anchor accuracy.
+
+E.2   T HE C O -E VOLVED G RADER
+
+The grader took its final form in two patches. The initial instruction assigns one of four labels with
+no rubric. The first patch adds a persona, a two-step milestone procedure, a points mapping, and a
+strictness rule, and introduces the prover prompt; a later patch aligns it with human grades.
+  Evolved rule: the grader’s first rewrite (gen 2)
+  You are an expert, conservative IMO proof grader. ... First identify
+  the key required steps from the guidelines; then check whether the
+  student's text actually proves them rigorously, ignoring unsupported
+  claims, handwaving, and statements merely resembling the reference.
+
+  Use this mapping unless the problem-specific guidelines say otherwise:
+  - correct: a complete rigorous solution (7/7).
+  - almost: essentially complete with only a minor local gap or
+    arithmetic slip (6/7); do NOT use for missing major lemmas.
+  - partial: substantial guideline-listed progress, but not a
+    near-complete proof (1/7).
+  - incorrect: no substantial credited progress or a fundamentally
+    flawed argument (0/7).
+
+  Be especially strict with advanced geometry/combinatorics solutions
+  that invoke large unproved lemmas ...
+
+
+The second patch (gen 22) aligns the grader with human grades: it credits proofs that differ from the
+reference solution or cite standard results tersely, and fails proofs with fatal gaps.
+These two patches explain its behavior in the panel of Tab. 3.
+
+E.3   T HE P O L Y G L O T C ODE R EVIEWER
+
+The Polyglot code-review slot was replaced three times, starting from a pass/fail verdict on gen-
+eral code quality. Each incumbent narrows what counts as a failure to defects visible in the diff. The
+third branches from an earlier ancestor than the second, so it does not inherit the second’s rules.
+  Evolved rules: the three promoted code reviewers
+  Node 19 (gen 5): You are a pragmatic senior maintainer reviewing a
+  proposed patch. ...
+  - PASS when the patch plausibly fixes/adds the intended behavior, is
+    localized, and has no clear correctness, compilation, security, or
+    data-loss defect. ...
+  - FAIL only for a concrete blocker: obvious wrong behavior, broken API
+    usage, compile/type errors visible in the diff, missing essential
+    cases, flaky/meaningless tests, ...
+  - ... If evidence is balanced, prefer pass.
+
+  Node 34 (gen 34, appends): - Review in this order: (1) infer the
+  intended user-visible behavior ..., (2) check whether production code
+  implements it, (3) look for definite regressions or syntax/type
+  errors, (4) only then consider style, test coverage, and
+  maintainability. Style concerns without a concrete correctness risk
+  should not cause fail. ... FAIL only when you can point to a specific
+  scenario that remains broken ...
+
+  Node 86 (gen 59, extends the blocker rule): ... Do not invent blockers
+  from missing project context; the diff alone must show the defect.
+  - PASS broad but coherent mechanical migrations, CI/build-artifact
+    pipeline updates, ... and test-only fixes when they are internally
+    consistent ...
+
+
+
+
+                                                     30
+Table 15: Only the reviewer with the highest anchor score separates failing from passing
+DeepSWE patches during search. Each row is a distinct seated reviewer in seating order, excluding
+the root; Anchor is its ground-truth score at the end of its last tenure, and the acceptance rates are
+over every coder patch it judged during search, split by the patch’s test result.
+
+         Reviewer            Anchor     Patches   Failing     Accepts passing   Accepts failing
+         beec9b7              0.22          230          26        95.6%            100.0%
+         5f52214              0.19           39           1       100.0%            100.0%
+         09e57aa              0.22          150          14        94.1%             92.9%
+         03333c6              0.22          262          37        91.6%             83.8%
+         8fcb4fe              0.22          232          33        88.9%             81.8%
+         0051587              0.36          201          25        92.0%             92.0%
+         54ce092 (final)      0.48         1181         298        35.0%            20.8%
+
+
+
+  - For security/credential-looking files, fail only for an actual
+    exposed secret or dangerous permission; ...
+
+
+
+
+E.4   T HE D E E P SWE C ODE R EVIEWER
+
+The DeepSWE code-review slot was replaced 11 times across 8 distinct reviewers, three times before
+the winner was generated, at 47M, 160M, and 309M search tokens (Fig. 1). The seated reviewer’s
+ground-truth score rose at each of those three replacements, from 0.03 to 0.12, 0.19, and 0.22, and
+reached 0.48 by the last.
+What the seated reviewers changed. The first replacement kept the root’s single-call design, so its
+gain came from evidence. Later reviewers read the repository before deciding. The second writes an
+acceptance checklist from the task statement alone, before seeing the patch, then inspects source in
+up to three rounds. The last and strongest applies the patch to a scratch copy with Git.
+Does anchor promotion carry over to the search? Promotion only checks a reviewer on the
+anchor, so we ask whether the promoted reviewer also judges the coder patches the search produces
+more accurately. Every search-time verdict is joined to the test result of the patch it judged (Tab. 15).
+Every reviewer seated before the last accepts nearly every patch, failing or not, so it gives the search
+almost no signal. The final reviewer, with the highest anchor score, is the only one that separates
+failing from passing patches. On the 337 patches it judged together with an earlier reviewer, it
+accepts 19% of failing patches against 85% for its predecessors (95% task-bootstrap interval of the
+drop [0.12, 0.80]), raising balanced accuracy from 0.52 to 0.64. It is also harsher on correct work,
+accepting 47% of passing patches against 89%.
+
+E.5   W INNING L INEAGES
+
+Each archive node stores its parent, its cumulative diff, and the meta-agent transcript that produced
+it. Figure 13 draws the three GPT-5.5 archives, Tabs. 16 to 18 list every step, and quotes are from
+the meta-agents’ own summaries.
+The most consequential code edit outside evaluator prompts is node 66’s change to the prover’s
+inherited revision pass (Listing 1), which preserves sound drafts instead of rewriting them.
+
+       Listing 1: Node 66’s change (proof run): the inherited revision pass is off by default.
+ diff --git a/task_agent.py b/task_agent.py
+ @@ class TaskAgent(AgentSystem):
+ -     IMO_PROOF_REVISION_ENABLED = os.environ.get("HYPERAGENTS_IMO_PROOF_REVISION", "1") !=
+      ↩→ "0"
+ +     IMO_PROOF_REVISION_ENABLED = os.environ.get("HYPERAGENTS_IMO_PROOF_REVISION", "0") ==
+      ↩→ "1"
+ @@ Draft proof:
+ -Find any hidden gaps ... If the draft is sound, keep it but make it cleaner.
+ +Preserve the draft if it is essentially sound; do not replace a detailed proof
+ +with a shorter answer that relies on an unproved obscure named theorem.
+
+
+
+
+                                                   31
+                        After replacement 1             After replacement 2                          After replacement 3
+
+ Polyglot
+
+
+
+
+                   After the evaluator replacement
+
+
+
+                                                     Best-belief winner
+                                                     Winning lineage
+ Paper
+
+
+
+
+                                                     Survived (top-8 before and after)
+                                                     Promoted into the top-8             0.0   0.2        0.4      0.6       0.8   1.0
+                                                                                                       Best-belief utility
+                                                     Churned out of the top-8
+
+
+
+
+                        After replacement 2             After replacement 3
+ Proof
+
+
+
+
+Figure 13: What each evaluator replacement keeps versus what it re-ranks, in all three headline
+domains. Rows are domains (top to bottom: Polyglot, paper, proof); columns are that run’s
+shown evaluator replacements, each drawing the archive as it stood at that replacement (radial layout,
+node color is best-belief utility and size is evidence count). Among the top-8 leaderboard nodes at
+each replacement, navy rings survived the re-ranking, amber rings are lineages the new criterion
+promotes into the top-8, and gray rings are churned out. Replacements with fewer than 20 ranked
+nodes are omitted, as in Fig. 4, so the proof run’s first replacement is not shown.
+
+
+
+            Table 16: Polyglot winning chains; both final best-belief agents reach 71.7% held out.
+
+            Node      Modification
+            specialist
+                4 coder tool budget 16→40; review calibration; catalog-path fix
+               35 coder workflow: one tool call at a time, prefer exact algorithms
+               51 review balance against blindly passing bad patches
+              104 parse retry; label normalization; concrete-blocker review rule
+            generalist
+                5 parse retry; tool budget 16→24; concrete-blocker review
+              19 untracked-artifact and symlink diff hygiene
+              33 the same hygiene applied to a second code path
+              42 one tool call per turn; preserve existing public APIs
+              72 read problem text and tests first; wider artifact filter
+              78 final-output reminder; conservative label normalization
+              93 dedicated artifact-review format; pass plausible localized fixes
+             100 JSON-serialized tool results (transcript-corruption fix)
+
+
+
+
+                                                              32
+Table 17: Paper-domain winning chains. The writer chain passes through the reported reviewer
+(49) and generalist (78); the adversarial reviewer (31) descends separately.
+
+   Node     Modification
+   writer
+       7    stronger authoring prompt; runtime prompt nudges
+     11     parse-repair retry; 8,192-token writer output cap
+     17     present raw paper text instead of the input dictionary
+     37     remove global LLM monkeypatch
+     49     writer returns raw text, not JSON-wrapped continuations
+     78     two-sided review calibration; no acceptance-seeking prose
+     81     format hygiene in the client; revert import hook that could hang
+     89     continue from the exact stopping point; longer word target
+    150     liberal unwrapping of writer output (recovers wrapped papers)
+    154     area-chair review standard; bounded-evidence writing rules
+   adversarial
+      4 conjunctive selective-conference review standard
+     25 writer-side review treated as a viability gate
+     31 self-contained revised paper; 4,096-token output cap
+
+
+
+
+Table 18: Proof-domain winning chains. The grader’s alignment step at node 22 is the largest
+single-step gain in any winning chain of the three runs.
+
+   Node     Modification
+   grader
+       2 conservative rubric-aware grading; first prover prompt
+      22 alignment with human grades on terse or compressed proofs
+   prover
+       3    parse retry; lemma-justification and case-coverage prompt
+      11    partial-versus-incorrect distinction; hidden-assumption checks
+      19    second-pass check with an adversarial checker
+      66    preserve sound drafts (below)
+
+
+
+
+             𝚁𝚀𝙶𝙼 (82 nodes)                        𝙷𝙶𝙼-𝙷 (73 nodes)
+
+
+                                                                                     Best-belief winner (𝚁𝚀𝙶𝙼)
+                                                                                     Winning lineage (𝚁𝚀𝙶𝙼)
+                                                                                     Best-belief winner (𝙷𝙶𝙼-𝙷)
+                                                                                     Winning lineage (𝙷𝙶𝙼-𝙷)
+                                                                                     Seated code reviewer
+                                                                                     Archive node (size = evidence)
+
+
+
+
+                                                                               0.0     0.2      0.4      0.6       0.8   1.0
+                                                                                             Best-belief utility
+
+
+
+
+Figure 14: The RQGM and HGM-H DeepSWE archives. Radial layout; node color is the final best-
+belief coder utility and size is evidence count. The winning lineages end in each run’s best coder.
+Triangles mark nodes seated as the code reviewer.
+
+
+
+                                                    33
+Table 19: DeepSWE winning chains. The RQGM coder reaches 82.1% held out at low effort, the
+HGM-H coder 75.0%. Nodes marked with a dash published no code change: the host keeps each
+expansion’s best-measured submission, which for these two was the inherited code.
+
+        Node    Modification
+ RQGM coder
+ e28cf32f       repository-grounded two-call reviewer (research, then audit); contract-checklist coder
+                preamble
+ 1bf78e50       – (concise-revision experiment not published)
+ f076c908       – (scenario audit and source-diverse retrieval not published)
+ 337755f2       review treated as a fallible hypothesis in revision; final judge no longer shown the
+                investigator’s hypotheses
+ 904d5a2a       coder adds new regression tests while keeping existing tests and callers unchanged
+ HGM-H coder
+ 5d7a3a5c repair treated as a hypothesis
+ a79459ad robust JSON parsing
+ e5acee5a coder may add new regression tests; existing tests read-only
+ 73527b78 execution-evidence log and verification audit added, both disabled
+ 90c047d6 task-only contract probes added, disabled after failed replication
+ d229327d evidence-first issue adjudication
+ 34bcf8a1 one-paragraph contract map in the coder system prompt
+ b999b5e7 compact coder instance template
+
+
+
+On DeepSWE, the RQGM archive holds 82 nodes and the HGM-H archive 73 (Fig. 14); Tab. 19 lists
+both winning chains, quoting the meta-agents’ commit messages. Of the 52 accepted RQGM patches
+that change code, 83% modify shared code or both roles.
+What the RQGM chain changed. Every code change on the chain targets the reviewer or the coder’s
+contract. The first expansion split the reviewer into two calls: a research call reads the problem and
+diff and requests up to eight reads of the base repository, and a judge call must back every rejection
+with a concrete failing call. The same patch replaced the coder preamble with a contract workflow.
+The next two expansions kept their parent’s code. The fourth stopped showing the judge the investi-
+gator’s unverified hypotheses. The winner adds regression tests and leaves existing ones unchanged.
+
+    DeepSWE evolved reviewer audit (node e28cf32f, first line from 337755f2)
+    Independently trace the requested behavior through the proposed code
+    before deciding. For each proposed rejection give a concrete execution
+    or API call, the required result, the actual result, and the code path
+    responsible. The repository extracts show the BASE revision, so mentally
+    apply the complete diff; removed base code is not a defect in the
+    proposed result. Missing extracts are not missing implementation. ...
+
+
+What the HGM-H chain changed. Its third node reached the regression-test permission the RQGM
+winner adopted. The RQGM reviewer was replaced three times under its anchor before the winner.
+
+
+F     T HEORY
+
+F.1    S ETTING : THE HGM S EARCH A LGORITHM
+
+We use the tree search of Sec. 3.1, with 𝑈 (𝑎) the expected success rate under the evaluation protocol.
+
+    Theorem 1 (Wang et al. [2]). Under Asm. 1, access to a CMP oracle is sufficient to implement
+    the Gödel Machine within the given search budget.
+
+The RQGM keeps HGM’s Thompson sampling over clade counts and its UCB-Air gate [24], with the
+role–task balancing and erasure described above. The results below concern the stream of binary
+outcomes each node receives; what a node contains does not enter.
+
+
+                                                     34
+F.1.1    O PERATING C ONDITIONS
+
+  Assumption 1 (Fixed-criterion search). Within one fixed-criterion epoch:
+  C1. Only the agent selected after the budget is spent is scored; intermediate outcomes guide
+      search but are not rewards.
+  C2. Repeated evaluations of a fixed node–task pair are binary outcomes with a time-invariant
+      success probability.
+  C3. Any oracle or proof object in the ideal HGM theorem lies outside the empirical budget.
+  C4. Expansions and evaluations are charged against the externally fixed budget.
+
+Item C2 is the one RQGM must work to keep. HGM relies on a fixed evaluator for it; RQGM freezes
+learned evaluators within an epoch (App. B.3), changes them only at checkpoints, and erases records
+that depended on a displaced evaluator (App. B.3); all results below assume Asm. 1.
+
+F.2     O NE RULE FOR R EPLACEMENT AND S ELECTION
+
+Evaluators are frozen within an epoch. At a checkpoint, each slot promotes the candidate with the
+highest 𝜖-best-belief on its anchor, optionally combined with an adversarial pool, and the winner
+stays frozen for the whole next epoch (App. B.3).
+
+F.2.1    E VALUATOR REPLACEMENT RULE
+                                                    (𝑗 )
+At checkpoint 𝑐, slot 𝑚 compares its incumbent 𝑒 𝑚 𝑚 with the challengers C𝑚 (𝑐) that have anchor
+                                                        (𝑗 )                gt     gt
+evidence on GT𝑚 , so the candidates are E 𝑚 (𝑐) = {𝑒 𝑚 𝑚 } ∪ C𝑚 (𝑐). With 𝑆 𝑒 and 𝐹𝑒 the successes
+and failures of 𝑒 on the anchor, each candidate scores
+                                                          gt       gt 
+                                   𝐵𝐵 𝜖 (𝑒) = 𝐼 𝜖−1 1 + 𝑆 𝑒 , 1 + 𝐹𝑒 ,
+the 𝜖-quantile of its Beta working posterior (Prop. 4), the same form of score that selects
+agents (Sec. 3.1). The slot promotes the candidate with the highest 𝐵𝐵 𝜖 . Ties go to the incumbent, in
+which case no transition happens. A slot with an adversarial pool instead scores a weighted average
+of its best-beliefs on positive anchor items, negative anchor items, and the current pool (App. F.6).
+The pool is rebuilt at each replacement from the displaced evaluator’s accepted outputs (App. F.6).
+
+F.3     W ORKING -P OSTERIOR C ONSISTENCY
+
+Fix an epoch 𝒋 and a node 𝑎. Let C be the set of eligible role–task cells 𝑐 = (𝑟, 𝑑) of 𝑎, fixed
+during the epoch, and let 𝑝 𝑐 be the success probability ofÍone evaluation of 𝑎 on 𝑐. For weights
+𝑤 𝑐 ≥ 0 summing to one, the epoch-local utility is 𝑈 𝒋 (𝑎) = 𝑐∈ C 𝑤 𝑐 𝑝 𝑐 . The least-evaluated rule of
+App. B.2 drives role counts, and task counts within a role, to equal shares, so it realizes the weights
+𝑤 𝑟 ,𝑑 = 1/(|R elig | |D𝑟 ,elig |) of the utility in Sec. 3.1.
+
+  Proposition 1 (Consistency under balanced role–task sampling). After 𝑛 evaluations of 𝑎 in the
+  epoch, let 𝑛𝑐 (𝑛) count those on cell 𝑐 and 𝑆 𝑎 (𝑛) count the successes. Assume 𝑛𝑐 (𝑛)/𝑛 → 𝑤 𝑐
+  for every 𝑐, and that each cell’s running success rate converges almost surely to 𝑝 𝑐 , as it
+  does when the cell’s outcomes are independent Bernoulli( 𝑝 𝑐 ) draws. Then the mean 𝑀𝑛 =
+  (1 + 𝑆 𝑎 (𝑛))/(𝑛 + 2) of the working posterior Beta(1 + 𝑆 𝑎 (𝑛), 1 + 𝑛 − 𝑆 𝑎 (𝑛)) converges almost
+  surely to the epoch-local utility 𝑈 𝒋 (𝑎) of the node.
+
+
+Proof. Let 𝑝b𝑐 be the success rate of cell 𝑐 over its 𝑛𝑐 (𝑛) trials, so 𝑆 𝑎 (𝑛)/𝑛 = 𝑐 (𝑛𝑐 (𝑛)/𝑛) 𝑝b𝑐 . A
+                                                                                   Í
+cell with 𝑤 𝑐 > 0 has 𝑛𝑐 (𝑛) → ∞ and hence 𝑝b𝑐 → 𝑝 𝑐 . A cell with 𝑤 𝑐 = 0 contributes at most
+𝑛𝑐 (𝑛)/𝑛 → 0. Since C is finite, 𝑆 𝑎 (𝑛)/𝑛 → 𝑈 𝒋 (𝑎), and |𝑀𝑛 − 𝑆 𝑎 (𝑛)/𝑛| = |𝑛 − 2𝑆 𝑎 (𝑛)|/(𝑛(𝑛 + 2)) ≤
+1/(𝑛 + 2).                                                                                             □
+
+The pooled Beta thus preserves HGM’s interface, and its mean has the correct limit.
+
+
+                                                  35
+F.4   E POCH -L OCAL F IXED -U TILITY VALIDITY
+                                                                 (𝑗 )
+Each evaluator slot 𝑚 ∈ {1, . . . , 𝑀 } has an active criterion 𝜅 𝑚 𝑚 . It collects every slot-local object
+that can change the distribution of an outcome that depends on the slot: the frozen evaluator, and
+any replay, validation, or adversarial distribution tied to it. Derived search statistics are not part of
+it. The epoch vector 𝒋 = ( 𝑗1 , . . . , 𝑗 𝑀 ) indexes the active criteria 𝜿 𝒋 .
+
+  Assumption 2 (Stationary learned evaluation within an epoch). Within epoch 𝒋, for every
+  evaluator-dependent node–role–task cell (𝑎, 𝑟, 𝑑), the following are fixed: the active criteria
+  that affect the cell, the workspace of 𝑎, the protocol that generates, replays, or samples the
+  scored object for task 𝑑, and the binary scoring rule. Equivalently, the object and outcome are
+  drawn as
+                                𝒋                𝒋
+                          𝑋 ∼ 𝑃 𝑎,𝑟 ,𝑑 ,  𝑂 ∼ 𝐾𝑟 ,𝑑 (· | 𝑋),    𝑂 ∈ {0, 1},
+  where both laws are time-homogeneous and unaffected by earlier outcomes in the epoch. A
+                               𝒋
+  deterministic evaluator has 𝐾𝑟 ,𝑑 (1 | 𝑥) ∈ {0, 1}.
+
+This is the evaluator-dependent form of Item C2. It fixes each outcome’s mean, all that Prop. 3 uses.
+A utility record 𝑧 = (𝑎, 𝑟, 𝑑, 𝑜, dep(𝑧), 𝜅(𝑧)) stores the node, role, task, and binary outcome. It also
+stores dep(𝑧) ⊆ {1, . . . , 𝑀 }, the slots whose criteria affected the record through generation, sam-
+pling, replay, or scoring, and 𝜅(𝑧), the criteria active on those slots when it was written. Evaluator-
+independent records have dep(𝑧) = ∅. Raw artifacts and audit logs are not records. They may be
+kept across transitions, but reach search statistics only through a new record.
+
+                                                                                          (𝑗 )
+  Definition F.1 (Criterion-valid record). A record 𝑧 is valid under 𝜿 𝒋 if 𝜅ℓ (𝑧) = 𝜅ℓ ℓ for every
+  ℓ ∈ dep(𝑧). Records with dep(𝑧) = ∅ are always valid. An archive is criterion-consistent under
+  𝜿 𝒋 if every record it retains is valid under those criteria.
+
+  Definition F.2 (Utility transition on slot 𝑚). A utility transition on slot 𝑚 moves to the epoch
+                                                                              ′
+                                           ′ = 𝑗 + 1. The new criterion 𝜅 ( 𝑗𝑚 ) is frozen before any
+  vector 𝒋 ′ that differs from 𝒋 only in 𝑗 𝑚    𝑚                          𝑚
+  new record is collected. The transition then filters the records Z𝑎 of every node to
+                                                                           ( 𝑗′ )
+                       Erase𝑚 (Z𝑎 ) = 𝑧 ∈ Z𝑎 : 𝑚 ∉ dep(𝑧) or 𝜅 𝑚 (𝑧) = 𝜅 𝑚 𝑚
+  and recomputes every derived statistic from the retained records: node and clade success and
+  failure counts, role and task counters, Thompson-sampling statistics, slot-local validation coun-
+  ters, and any cached score summaries derived from them.
+
+  Proposition 2 (Selective erasure preserves criterion consistency). If the archive is criterion-
+  consistent′
+              under 𝜿 𝒋 before a transition on slot 𝑚, then after it the archive is criterion-consistent
+          𝒋
+  under 𝜿 , and it stays so as the new epoch adds records tagged with the active criteria.
+
+                                                                                           ( 𝑗′ )
+Proof. Take a retained record 𝑧 and ℓ ∈ dep(𝑧). If ℓ = 𝑚, retention means 𝜅 𝑚 (𝑧) = 𝜅 𝑚 𝑚 . If ℓ ≠ 𝑚,
+                                  (𝑗 )   ( 𝑗′ )
+prior consistency gives 𝜅ℓ (𝑧) = 𝜅ℓ ℓ = 𝜅ℓ ℓ . New records are valid by construction, and statistics
+are recomputed from valid records only.                                                            □
+
+  Proposition 3 (Epoch-local fixed-criterion validity). Fix 𝒋 and an archive that is criterion-
+  consistent under 𝜿 𝒋 . Let evaluator-dependent roles satisfy Asm. 2; evaluator-independent roles
+  satisfy Item C2. Then every eligible (𝑎, 𝑟, 𝑑) has a success probability 𝑝 𝑟 ,𝑑, 𝒋 (𝑎) = Pr𝜿 𝒋 (𝑂 =
+                                                                           𝒋
+  1 | 𝑎, 𝑟, 𝑑) that is fixed throughout the epoch. For fixed weights 𝑤 𝑟 ,𝑑 ≥ 0 normalized over the
+  eligible cells C𝒋 (𝑎), the utility
+                                               ∑︁
+                                                         𝒋
+                                     𝑈 𝒋 (𝑎) =        𝑤 𝑟 ,𝑑 𝑝 𝑟 ,𝑑, 𝒋 (𝑎)
+                                            (𝑟 ,𝑑) ∈ C𝒋 (𝑎)
+
+
+
+
+                                                     36
+  is fixed as well. The epoch is thus a fixed binary-outcome search problem. Theorem 1 therefore
+  applies to this problem under 𝑈 𝒋 , and the Thompson sampler estimates it from retained records.
+
+                                                                           𝒋
+Proof. For an evaluator-dependent role, 𝑝 𝑟 ,𝑑, 𝒋 (𝑎) = E𝑋∼𝑃 𝒋          [𝐾𝑟 ,𝑑 (1 | 𝑋)], and both laws are fixed
+                                                               𝑎,𝑟 ,𝑑
+in the epoch. Item C2 gives the same for evaluator-independent roles. By criterion consistency, every
+retained record was written under the active criteria of the slots it depends on, and new records use
+the same frozen criteria. Old and new records are therefore outcomes of the same fixed problem. □
+
+F.5   S UPPORTING R ESULTS FOR C ONTROLLED U TILITY E VOLUTION
+
+Remark 1 (Anchor-only evaluator replacement). On a slot without a pool, the score 𝐵𝐵 𝜖 (𝑒) of
+                                              gt  gt
+App. F.2.1 depends on the anchor counts (𝑆 𝑒 , 𝐹𝑒 ) alone; no slot-dependent record enters it. The
+incumbent is a candidate and wins ties, so a transition happens only when a challenger scores
+strictly higher, and the promoted evaluator’s anchor best-belief is at least the incumbent’s.
+
+  Proposition 4 (Best-belief lower-bound trajectory). Let A be a finite candidate set, each 𝑎 ∈ A
+  with working posterior Beta(1 + 𝑆 𝑎 , 1 + 𝐹𝑎 ) over its epoch-local utility and 𝐵𝐵 𝜖 (𝑎) = 𝐼 𝜖−1 (1 +
+  𝑆 𝑎 , 1 + 𝐹𝑎 ). For 𝑎★ ∈ arg max𝑎∈ A 𝐵𝐵 𝜖 (𝑎), the working posterior of 𝑎★ gives Pr 𝑈 (𝑎★) ≥
+  𝐵𝐵 𝜖 (𝑎★) = 1 − 𝜖. For 𝐿 reported selections, if each selected agent’s utility falls below its
+  bound with probability at most 𝜖 under the joint data and selection process, all 𝐿 bounds hold
+  simultaneously with probability at least 1 − 𝐿𝜖 by a union bound.
+
+
+Proof. The first claim is the definition of the 𝜖-quantile of a continuous distribution. The second is
+the union bound over the 𝐿 violation events.                                                        □
+
+Appendix F.6 gives the conditions under which best-belief approximates exact comparison.
+Piecewise fixed-criterion validity. Let 𝜏1 < 𝜏2 < · · · ≤ 𝐵 be the realized transition times, with
+𝜏0 = 0. Let F𝜏𝑘 be the history at 𝜏𝑘 : the archive, records, logs, candidates, checkpoint statistics, and
+all earlier random choices made by the search process.
+
+  Proposition 5 (Piecewise fixed-criterion validity). Suppose Asm. 2 holds in every epoch, tran-
+  sitions happen only at checkpoints, and each transition erases and recomputes as in Def. F.2.
+  Then, conditional on F𝜏𝑘 and the criteria selected at 𝜏𝑘 , the interval [𝜏𝑘 , 𝜏𝑘+1 ) is a fixed-
+  criterion binary-outcome search problem. Each eligible (𝑎, 𝑟, 𝑑) has a fixed success probability
+    (𝑘 )                            (𝑘 ) ), and the role–task balanced utility is fixed for the epoch.
+  𝑝 𝑎,𝑟  ,𝑑 = Pr(𝑂 = 1 | 𝑎, 𝑟, 𝑑, 𝜅
+
+
+
+Proof. Induct on 𝑘. At 𝜏0 every record was written under the initial criteria, so the archive is
+criterion-consistent. If it is consistent before 𝜏𝑘 , apply the transitions at 𝜏𝑘 one slot at a time;
+Prop. 2 keeps the archive consistent after each and through the epoch. No transition happens in-
+side [𝜏𝑘 , 𝜏𝑘+1 ), so Prop. 3 gives the fixed probabilities. The tree inherited from earlier epochs is part
+of F𝜏𝑘 . It fixes which nodes exist but changes no outcome law inside the interval.                      □
+
+The task-agent objective changes at every transition, so this statement is per epoch.
+Exponential checkpoint overhead. Fix 𝜌 > 1 and ℎ ≥ 1, and place checkpoint opportunities at
+                                C𝐵 (𝜌, ℎ) = {⌊ℎ𝜌 𝑞 ⌋ : 𝑞 = 0, 1, . . . , 𝑄},
+where 𝑄 is the largest integer with ℎ𝜌 𝑄 ≤ 𝐵.
+
+  Proposition 6 (Linear work under exponential checkpoints). Let each evaluation write at most
+  one slot-dependent record, so a checkpoint at time 𝑐 reprocesses at most 𝑐 records. Then all
+  checkpoints in C𝐵 (𝜌, ℎ) together reprocess O (𝐵) records, at most 𝜌𝐵/(𝜌 − 1), counting a
+  record once for each checkpoint that reprocesses it.
+
+
+                                                    37
+Proof. 𝑄
+       Í               𝑄+1 − 1)/(𝜌 − 1) < 𝜌 ℎ𝜌 𝑄 /(𝜌 − 1) ≤ 𝜌𝐵/(𝜌 − 1). The base-two schedule,
+          𝑞=0 ℎ𝜌 = ℎ(𝜌
+                𝑞
+
+𝜌 = 2, gives 2𝐵.                                                                            □
+Remark 2 (Dense uniform checkpointing). With a checkpoint every ℎ steps, the 𝑞-th can reprocess
+                                             Í ⌊ 𝐵/ℎ⌋
+𝑞ℎ records, and the ⌊𝐵/ℎ⌋ checkpoints total ℎ 𝑞=1     𝑞 = Θ(𝐵2 /ℎ) for 𝐵 ≥ ℎ.
+
+F.6     E VALUATOR I MPROVEMENT
+
+F.6.1    E XACT VALIDATION
+Fix one slot, a finite task set D, finite validation sets 𝐷 𝑑 with fixed labels, and sampling weights
+𝑤 𝑑 ≥ 0 summing to one. Each immutable evaluator 𝑒 has a fixed correctness table 𝑦 𝑑 (𝑒, 𝑥) ∈ {0, 1},
+and                                         ∑︁ 𝑤 𝑑 ∑︁
+                                   𝑄(𝑒) =                    𝑦 𝑑 (𝑒, 𝑥).                          (1)
+                                            𝑑∈ D
+                                                 |𝐷 𝑑 | 𝑥 ∈𝐷
+                                                                𝑑
+
+
+
+  Proposition 7 (Exact replacement). At checkpoint 𝑗, let the finite comparison set E 𝑗 contain
+  the incumbent 𝑒 ( 𝑗 ) , and choose 𝑒 ( 𝑗+1) ∈ arg max𝑒∈ E 𝑗 𝑄(𝑒), keeping the incumbent on ties. Then
+  𝑄(𝑒 ( 𝑗+1) ) ≥ 𝑄(𝑒 ( 𝑗 ) ), with strict inequality at every replacement, and there are finitely many.
+
+
+Proof. The incumbent is a candidate, so 𝑄(𝑒 ( 𝑗+1) ) = max E 𝑗 𝑄 ≥ 𝑄(𝑒 ( 𝑗 ) ), and a tie keeps it. Each
+replacement strictly raises 𝑄, and 𝑄 takes finitely many values on a finite binary table, so replace-
+ments stop. With 𝑁 equally weighted items, each increase is at least 1/𝑁, so there are at most 𝑁. □
+
+The guarantee concerns the validation objective and survives any shortlist containing the incumbent.
+
+F.6.2    B EST- BELIEF APPROXIMATION
+
+  Proposition 8 (Comparison error). If |𝑏 𝑗 (𝑒) − 𝑄(𝑒)| ≤ 𝜂 𝑗 on E 𝑗 and 𝑒 ( 𝑗+1) maximizes 𝑏 𝑗 , then
+
+                           𝑄(𝑒 ( 𝑗+1) ) ≥ max 𝑄(𝑒) − 2𝜂 𝑗 ≥ 𝑄(𝑒 ( 𝑗 ) ) − 2𝜂 𝑗 .                   (2)
+                                          𝑒∈ E 𝑗
+
+
+
+Proof. Let 𝑒★ maximize 𝑄 over E 𝑗 . Then 𝑄(𝑒 ( 𝑗+1) ) ≥ 𝑏 𝑗 (𝑒 ( 𝑗+1) ) − 𝜂 𝑗 ≥ 𝑏 𝑗 (𝑒★) − 𝜂 𝑗 ≥ 𝑄(𝑒★) −
+2𝜂 𝑗 .                                                                                                 □
+
+Best-belief meets this condition when it targets the same objective. For one candidate with 𝑛 =
+𝑆 𝑛 + 𝐹𝑛 trials, 𝑍 𝑛 ∼ Beta(1 + 𝑆 𝑛 , 1 + 𝐹𝑛 ) has mean 𝑀𝑛 = (1 + 𝑆 𝑛 )/(𝑛 + 2) and 𝜖-quantile 𝑏 𝑛 with
+                                                               1
+                               |𝑏 𝑛 − 𝑀𝑛 | ≤ √︁                                    ,                  (3)
+                                                   4(𝑛 + 3) min{𝜖, 1 − 𝜖 }
+because Var(𝑍 𝑛 ) = 𝑀𝑛 (1 − 𝑀𝑛 )/(𝑛 + 3) ≤ 1/(4(𝑛 + 3)) and Chebyshev gives 𝜖 = Pr(𝑍 𝑛 ≤ 𝑏 𝑛 ) ≤
+Var(𝑍 𝑛 )/(𝑀𝑛 − 𝑏 𝑛 ) 2 when 𝑏 𝑛 < 𝑀𝑛 (use 1 − 𝜖 when 𝑏 𝑛 > 𝑀𝑛 ). So if 𝑆 𝑛 /𝑛 → 𝑄(𝑒) almost surely,
+then 𝑀𝑛 → 𝑄(𝑒) and 𝑏 𝑛 → 𝑄(𝑒) for fixed 𝜖 ∈ (0, 1), and Prop. 8 applies with 𝜂 𝑗 → 0.
+
+F.6.3    A DVERSARIAL OBJECTIVES
+A slot with an adversarial pool scores the objective 𝑄 𝑃 (𝑒) = 𝑝 + (𝑒)/2 + 𝑝 − (𝑒)/4 + 𝑟 𝑃 (𝑒)/4, where
+𝑝 + and 𝑝 − are accuracies on positive and ordinary-negative anchor items and 𝑟 𝑃 is the rejection rate
+on pool 𝑃. Within an epoch the pool is fixed, so Props. 7 and 8 apply to 𝑄 𝑃 at each checkpoint.
+Across checkpoints the pool changes, so improvement is measured against the current objective:
+with drift 𝛿 𝑗 = sup𝑒 |𝑄 𝑗+1 (𝑒) − 𝑄 𝑗 (𝑒)| and 𝑏 𝑗 within 𝜂 𝑗 of 𝑄 𝑗 ,
+
+                                 𝑄 𝑗+1 (𝑒 ( 𝑗+1) ) ≥ 𝑄 𝑗 (𝑒 ( 𝑗 ) ) − 2𝜂 𝑗 − 𝛿 𝑗                      (4)
+by Eq. (2). The anchor terms 𝑝 + and 𝑝 − never change, so the adversarial term only reweights it.
+
+
+                                                       38
+G    L IMITATIONS
+
+Our analysis assumes stationarity within each epoch (App. F.4); provider-side model updates or
+nondeterministic tools can weaken this assumption in practice.
+The reviewer panel measures cross-reviewer acceptance, and the generated papers and proofs were
+scored by automated panels rather than human experts.
+The anchor bounds what evaluator evolution can achieve. A weak, noisy, or biased anchor lets eval-
+uators drift across epochs, and APReS decisions and IMO-GradingBench grades are themselves
+imperfect. A good anchor keeps evaluators accurate but confines them to its own decision boundary,
+so gains beyond the benchmark must come from objectives layered on top of it.
+
+
+H    E XTENDED R ELATED W ORK
+
+This section extends Section 2 with a broader overview.
+
+Self-Improving AI. Good [36] proposed a machine that designs better machines long before one
+was feasible, and Schmidhuber [14] made the idea precise with the Gödel Machine. Of its empirical
+successors (Sec. 2), HGM [2] starts from the observation that an agent’s benchmark score poorly pre-
+dicts the value of its descendants, and reports human-level coding-agent performance while scoring
+clades instead. HyperAgents [3] pairs each node’s task agent with a meta-agent that improves it,
+so the improvement mechanism is itself editable. Related systems self-modify scaffolds or runtime
+logic [37–39], refine prompts [40] or reasoning traces [41], self-tune for a domain [42], or hill-
+climb [43]. Two surveys organize the field, as a closed lifecycle of data, selection, optimization, and
+inference supervised by an evaluation layer [11], and by what is improved and how fully the loop is
+closed [44]. Both describe fixed evaluation criteria as the norm.
+
+Self-Improvement in Weight Space and Self-Play. A parallel line closes the loop through
+parameter updates instead of code edits. Meta-learning optimizes the learning dynamics them-
+selves [45, 46], while inference-time refinement improves single outputs through verbal self-critique
+without keeping gains across tasks [47]. Rejection-sampling self-training [41, 48], optionally guided
+by learned self-critique [49], and self-play fine-tuning [50] bootstrap a policy from its own fil-
+tered generations. Self-rewarding models [18] also act as their own judge; SCoRe [51] trains self-
+correction directly, related work rewards the reflection step [52], and SEAL [53] learns to write its
+own fine-tuning data and update directives. Proposer–solver(–judge) frameworks generate their own
+curricula: R-Zero [54], Absolute Zero [55], SPICE [56], and Language Self-Play [57] pose increas-
+ingly hard challenges, Multi-Agent Evolve [58] trains proposer, solver, and judge from one base
+model, and CURE [19] co-evolves a coder with its unit tester. Closest to our work, SCORE [20]
+observes that static evaluators saturate and co-trains evaluator and solver with shared parameters,
+and EvoRubrics [59] co-evolves a rubric generator adversarially with the policy. These methods
+mostly co-adapt generator and reward inside gradient-based training. The RQGM instead searches
+over agentic codebases and gates evaluator promotion on an external anchor, in line with evidence
+that self-correction is unreliable without external feedback [60].
+
+Learned Evaluation and Its Biases. Our evaluators build on LLM- and agent-as-a-judge evalu-
+ation [15, 61, 62], benchmarked for agreement with human preference [25]. Judges show position,
+verbosity, and self-preference biases [15, 16, 63, 64]; self-preference tracks a model’s ability to
+recognize its own text [22] and persists even when the judge’s own output is worse [65]. Peer re-
+view, our paper domain, is especially exposed: LLM reviewers lean toward acceptance [66], favor
+prestigious authors [67], and are fooled by laundered papers [68] and by agents optimized to write
+convincing but unsound work [69]. Mitigations such as juries [70], adversarial hardening [71], and
+evaluator lifecycle management [21] mostly keep the judge outside the system it scores. Zhang et al.
+[21] come closest: they co-evolve metrics with agent skills under ground-truth guards and show the
+anchor keeps the metric reliable. The RQGM shares this anchor discipline but places it inside recur-
+sive self-improvement, and uses epoch boundaries to add adversarial objectives, such as replaying
+papers a displaced reviewer accepted, that target generated artifacts absent from the anchor.
+
+
+                                                  39
+Reward Hacking and Non-Stationary Objectives. Optimizing a fixed proxy invites exploita-
+tion. Reward hacking has been formalized [17] and follows Goodhart-style overoptimization curves
+against learned reward models [72]; a recent survey frames it as a consequence of compressing intent
+into a scalar [73], and policies learn proxy gaps as a reusable skill that adapts when the evaluator
+changes [74]. Contemporaneous theory argues that a static proxy has a receding “verification hori-
+zon” [75]. Live benchmarks [76, 77] refresh test data against contamination and saturation [11, 12],
+but benchmarks are costly to build, and changing one mid-run invalidates a search’s evidence. Con-
+trolled utility evolution addresses this: the utility changes only at epoch boundaries, and selective
+erasure keeps each epoch a fixed-criterion search.
+
+Multi-Agent Co-Evolution and Open-Endedness. Co-evolution against a moving target is old
+in evolutionary computation: fitness sharing [78] and self-modifying policies [79] co-adapt popula-
+tions, and self-play trains an agent against stronger versions of itself [80, 81]. LLM-agent versions
+share experience across populations [82], play adversarial strategy–environment games [83], co-
+evolve evaluators from opponent pools [84], or jointly optimize interacting components [85], and
+human–AI co-improvement adapts the signal through human feedback [86]. Open-ended search
+aims at endless novelty [87, 88], often through quality-diversity archives [89, 90] or growing skill
+libraries [91], increasingly with foundation models [5, 92–94] and toward a closed self-referential
+loop [95]. The RQGM instead changes the learned evaluation criterion itself at explicit epoch bound-
+aries, with epoch-local validity.
+
+Automated Scientific Discovery. Our open-ended domains belong to the effort to automate re-
+search end to end. The AI Scientist produced the first fully AI-generated paper to pass workshop peer
+review [5, 6], and Co-Scientist [96], Robin [97], AlphaEvolve [92], and evolutionary multi-agent sci-
+entists [98, 99] now cover hypothesis generation through experiments and write-up. These pipelines
+typically fix their model judges per run, and critiques highlight automated evaluation as a key re-
+liability risk [68, 100]. The RQGM lets the reviewer, grader, and code reviewer co-evolve with the
+writers, provers, and coders they score, anchored to APReS decisions [25], IMO-GradingBench
+grades [7], and accept/reject labels from CRAVE [27].
+
+
+
+
+                                                 40
+
